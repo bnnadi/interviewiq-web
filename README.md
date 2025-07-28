@@ -1,6 +1,6 @@
-# AI Interview Coach Web App
+# InterviewIQ Web App
 
-A React-based web application that provides personalized interview coaching using AI. The app analyzes job descriptions to generate relevant interview questions and provides real-time feedback on spoken answers.
+AI-powered interview coaching web application with voice recording and intelligent feedback.
 
 ## Features
 

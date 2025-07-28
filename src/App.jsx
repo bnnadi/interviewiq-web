@@ -158,10 +158,10 @@ function App() {
       <div className="max-w-4xl mx-auto px-4">
         <header className="text-center mb-8">
           <h1 className="text-4xl font-bold text-gray-900 mb-2">
-            AI Interview Coach
+            InterviewIQ
           </h1>
           <p className="text-gray-600">
-            Get personalized interview questions and feedback based on your job description
+            AI-powered interview coaching with intelligent feedback
           </p>
         </header>
 
