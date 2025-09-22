@@ -16,11 +16,15 @@ export class ApiService {
       })
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+        const errorText = await response.text()
+        throw new Error(`HTTP ${response.status}: ${errorText || response.statusText}`)
       }
 
       return await response.json()
     } catch (error) {
+      if (error.name === 'TypeError' && error.message.includes('fetch')) {
+        throw new Error(`Network error: Unable to connect to server. Please check your internet connection.`)
+      }
       throw new Error(`Failed to ${operation}: ${error.message}`)
     }
   }

@@ -1,9 +1,6 @@
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useMemo } from 'react'
 import { Toaster } from 'react-hot-toast'
-import JobInput from './components/JobInput'
-import QuestionList from './components/QuestionList'
-import AnswerRecorder from './components/AnswerRecorder'
-import FeedbackView from './components/FeedbackView'
+import ViewRenderer from './components/ViewRenderer'
 import ErrorMessage from './components/ui/ErrorMessage'
 import LoadingSpinner from './components/ui/LoadingSpinner'
 import { apiService } from './services/apiService'
@@ -103,6 +100,27 @@ function App() {
     setError(null)
   }, [])
 
+  const viewProps = useMemo(() => ({
+    // JobInput props
+    onSubmit: handleJobSubmit,
+    
+    // QuestionList props
+    questions,
+    onQuestionSelect: handleQuestionSelect,
+    onStartOver: handleStartOver,
+    
+    // AnswerRecorder props
+    question: selectedQuestion,
+    onTranscriptComplete: handleTranscriptComplete,
+    onBack: () => setCurrentView(VIEWS.QUESTION_LIST),
+    
+    // FeedbackView props
+    feedback,
+    transcript,
+    onNextQuestion: handleNextQuestion,
+    onStartOver: handleStartOver
+  }), [handleJobSubmit, questions, handleQuestionSelect, handleStartOver, selectedQuestion, handleTranscriptComplete, feedback, transcript, handleNextQuestion])
+
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <Toaster position="top-right" />
@@ -121,37 +139,10 @@ function App() {
         {loading && <LoadingSpinner message="Processing..." />}
 
         {!loading && (
-          <>
-            {currentView === VIEWS.JOB_INPUT && (
-              <JobInput onSubmit={handleJobSubmit} />
-            )}
-
-            {currentView === VIEWS.QUESTION_LIST && (
-              <QuestionList 
-                questions={questions} 
-                onQuestionSelect={handleQuestionSelect}
-                onStartOver={handleStartOver}
-              />
-            )}
-
-            {currentView === VIEWS.ANSWER_RECORDER && (
-              <AnswerRecorder 
-                question={selectedQuestion}
-                onTranscriptComplete={handleTranscriptComplete}
-                onBack={() => setCurrentView(VIEWS.QUESTION_LIST)}
-              />
-            )}
-
-            {currentView === VIEWS.FEEDBACK && (
-              <FeedbackView 
-                feedback={feedback}
-                transcript={transcript}
-                question={selectedQuestion}
-                onNextQuestion={handleNextQuestion}
-                onStartOver={handleStartOver}
-              />
-            )}
-          </>
+          <ViewRenderer 
+            currentView={currentView} 
+            viewProps={viewProps}
+          />
         )}
       </div>
     </div>

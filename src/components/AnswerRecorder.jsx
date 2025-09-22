@@ -1,9 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React from 'react'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 import { useTimer } from '../hooks/useTimer.js'
 import { isClipboardSupported } from '../utils/browserUtils.js'
 import { getFinalTranscript, hasTranscript } from '../utils/transcriptUtils.js'
 import TranscriptDisplay from './TranscriptDisplay.jsx'
+import RecordingButton from './RecordingButton.jsx'
+import ControlButton from './ControlButton.jsx'
 import Button from './ui/Button.jsx'
 import toast from 'react-hot-toast'
 
@@ -23,20 +25,20 @@ function AnswerRecorder({ question, onTranscriptComplete, onBack }) {
 
   const { time, formatTime, reset: resetTimer } = useTimer(isListening)
 
-  const startRecording = () => {
+  const handleStartRecording = () => {
     reset()
     startListening()
   }
 
-  const stopRecording = () => {
+  const handleStopRecording = () => {
     stopListening()
   }
 
-  const pauseRecording = () => {
+  const handlePauseRecording = () => {
     pauseListening()
   }
 
-  const resumeRecording = () => {
+  const handleResumeRecording = () => {
     resumeListening()
   }
 
@@ -96,46 +98,24 @@ function AnswerRecorder({ question, onTranscriptComplete, onBack }) {
 
         <div className="mb-6">
           <div className="flex justify-center items-center gap-4 mb-4">
-            <button
-              onClick={isListening ? stopRecording : startRecording}
+            <RecordingButton
+              isListening={isListening}
+              onClick={isListening ? handleStopRecording : handleStartRecording}
               disabled={!!error}
-              className={`w-16 h-16 rounded-full flex items-center justify-center text-white font-medium transition-all ${
-                isListening 
-                  ? 'bg-red-500 hover:bg-red-600 animate-pulse' 
-                  : 'bg-blue-600 hover:bg-blue-700'
-              } ${error ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              {isListening ? (
-                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clipRule="evenodd" />
-                </svg>
-              ) : (
-                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clipRule="evenodd" />
-                </svg>
-              )}
-            </button>
+            />
 
             {isListening && (
-              <button
-                onClick={pauseRecording}
-                className="w-12 h-12 rounded-full bg-yellow-500 hover:bg-yellow-600 flex items-center justify-center text-white"
-              >
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                </svg>
-              </button>
+              <ControlButton
+                onClick={handlePauseRecording}
+                variant="pause"
+              />
             )}
 
             {isPaused && (
-              <button
-                onClick={resumeRecording}
-                className="w-12 h-12 rounded-full bg-green-500 hover:bg-green-600 flex items-center justify-center text-white"
-              >
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-                </svg>
-              </button>
+              <ControlButton
+                onClick={handleResumeRecording}
+                variant="resume"
+              />
             )}
           </div>
           
