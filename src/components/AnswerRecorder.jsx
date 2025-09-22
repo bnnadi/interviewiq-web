@@ -1,159 +1,69 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
+import { useTimer } from '../hooks/useTimer.js'
+import { isClipboardSupported } from '../utils/browserUtils.js'
+import { getFinalTranscript, hasTranscript } from '../utils/transcriptUtils.js'
+import TranscriptDisplay from './TranscriptDisplay.jsx'
+import Button from './ui/Button.jsx'
+import toast from 'react-hot-toast'
 
 function AnswerRecorder({ question, onTranscriptComplete, onBack }) {
-  const [isRecording, setIsRecording] = useState(false)
-  const [transcript, setTranscript] = useState('')
-  const [interimTranscript, setInterimTranscript] = useState('')
-  const [error, setError] = useState('')
-  const [isPaused, setIsPaused] = useState(false)
-  const [recordingTime, setRecordingTime] = useState(0)
-  const recognitionRef = useRef(null)
-  const timerRef = useRef(null)
+  const {
+    isListening,
+    isPaused,
+    transcript,
+    interimTranscript,
+    error,
+    startListening,
+    stopListening,
+    pauseListening,
+    resumeListening,
+    reset
+  } = useSpeechRecognition()
 
-  useEffect(() => {
-    // Check if SpeechRecognition is supported
-    if (!window.SpeechRecognition && !window.webkitSpeechRecognition) {
-      setError('Speech recognition is not supported in this browser. Please use Chrome, Edge, or Safari.')
-      return
-    }
-
-    // Initialize speech recognition
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
-    recognitionRef.current = new SpeechRecognition()
-    
-    const recognition = recognitionRef.current
-    recognition.continuous = true
-    recognition.interimResults = true
-    recognition.lang = 'en-US'
-    recognition.maxAlternatives = 3
-
-    recognition.onstart = () => {
-      setIsRecording(true)
-      setIsPaused(false)
-      setError('')
-      startTimer()
-    }
-
-    recognition.onresult = (event) => {
-      let finalTranscript = ''
-      let interimTranscript = ''
-
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript
-        if (event.results[i].isFinal) {
-          finalTranscript += transcript
-        } else {
-          interimTranscript += transcript
-        }
-      }
-
-      setTranscript(prev => prev + finalTranscript)
-      setInterimTranscript(interimTranscript)
-    }
-
-    recognition.onerror = (event) => {
-      console.error('Speech recognition error:', event.error)
-      if (event.error === 'no-speech') {
-        setError('No speech detected. Please try speaking again.')
-      } else if (event.error === 'audio-capture') {
-        setError('Microphone access denied. Please allow microphone access and try again.')
-      } else if (event.error === 'not-allowed') {
-        setError('Microphone access denied. Please allow microphone access and try again.')
-      } else {
-        setError(`Speech recognition error: ${event.error}`)
-      }
-      setIsRecording(false)
-      stopTimer()
-    }
-
-    recognition.onend = () => {
-      setIsRecording(false)
-      setIsPaused(false)
-      stopTimer()
-    }
-
-    return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.stop()
-      }
-      stopTimer()
-    }
-  }, [])
-
-  const startTimer = () => {
-    setRecordingTime(0)
-    timerRef.current = setInterval(() => {
-      setRecordingTime(prev => prev + 1)
-    }, 1000)
-  }
-
-  const stopTimer = () => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current)
-      timerRef.current = null
-    }
-  }
-
-  const formatTime = (seconds) => {
-    const mins = Math.floor(seconds / 60)
-    const secs = seconds % 60
-    return `${mins}:${secs.toString().padStart(2, '0')}`
-  }
+  const { time, formatTime, reset: resetTimer } = useTimer(isListening)
 
   const startRecording = () => {
-    if (recognitionRef.current) {
-      setTranscript('')
-      setInterimTranscript('')
-      setError('')
-      recognitionRef.current.start()
-    }
+    reset()
+    startListening()
   }
 
   const stopRecording = () => {
-    if (recognitionRef.current) {
-      recognitionRef.current.stop()
-    }
+    stopListening()
   }
 
   const pauseRecording = () => {
-    if (recognitionRef.current && isRecording) {
-      recognitionRef.current.stop()
-      setIsPaused(true)
-      stopTimer()
-    }
+    pauseListening()
   }
 
   const resumeRecording = () => {
-    if (isPaused) {
-      startRecording()
-    }
+    resumeListening()
   }
 
   const handleSubmit = () => {
-    const finalTranscript = transcript + interimTranscript
-    if (finalTranscript.trim()) {
-      onTranscriptComplete(finalTranscript.trim())
+    const finalTranscript = getFinalTranscript(transcript, interimTranscript)
+    if (finalTranscript) {
+      onTranscriptComplete(finalTranscript)
     }
   }
 
   const handleRetry = () => {
-    setTranscript('')
-    setInterimTranscript('')
-    setError('')
-    setRecordingTime(0)
+    reset()
+    resetTimer()
   }
 
   const copyToClipboard = () => {
-    const finalTranscript = transcript + interimTranscript
-    if (finalTranscript.trim()) {
-      navigator.clipboard.writeText(finalTranscript.trim())
+    const finalTranscript = getFinalTranscript(transcript, interimTranscript)
+    if (finalTranscript && isClipboardSupported()) {
+      navigator.clipboard.writeText(finalTranscript)
         .then(() => {
-          // You could add a toast notification here
-          console.log('Transcript copied to clipboard')
+          toast.success('Transcript copied to clipboard')
         })
-        .catch(err => {
-          console.error('Failed to copy transcript:', err)
+        .catch(() => {
+          toast.error('Failed to copy transcript')
         })
+    } else if (finalTranscript) {
+      toast.error('Clipboard not supported in this browser')
     }
   }
 
@@ -187,15 +97,15 @@ function AnswerRecorder({ question, onTranscriptComplete, onBack }) {
         <div className="mb-6">
           <div className="flex justify-center items-center gap-4 mb-4">
             <button
-              onClick={isRecording ? stopRecording : startRecording}
+              onClick={isListening ? stopRecording : startRecording}
               disabled={!!error}
               className={`w-16 h-16 rounded-full flex items-center justify-center text-white font-medium transition-all ${
-                isRecording 
+                isListening 
                   ? 'bg-red-500 hover:bg-red-600 animate-pulse' 
                   : 'bg-blue-600 hover:bg-blue-700'
               } ${error ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
-              {isRecording ? (
+              {isListening ? (
                 <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clipRule="evenodd" />
                 </svg>
@@ -206,7 +116,7 @@ function AnswerRecorder({ question, onTranscriptComplete, onBack }) {
               )}
             </button>
 
-            {isRecording && (
+            {isListening && (
               <button
                 onClick={pauseRecording}
                 className="w-12 h-12 rounded-full bg-yellow-500 hover:bg-yellow-600 flex items-center justify-center text-white"
@@ -231,13 +141,13 @@ function AnswerRecorder({ question, onTranscriptComplete, onBack }) {
           
           <div className="text-center">
             <p className="text-sm text-gray-600 mb-2">
-              {isRecording ? 'Recording... Click to stop' : 
+              {isListening ? 'Recording... Click to stop' : 
                isPaused ? 'Paused... Click to resume' : 
                'Click the microphone to start recording'}
             </p>
-            {isRecording && (
+            {isListening && (
               <p className="text-lg font-mono text-blue-600">
-                {formatTime(recordingTime)}
+                {formatTime(time)}
               </p>
             )}
           </div>
@@ -248,7 +158,7 @@ function AnswerRecorder({ question, onTranscriptComplete, onBack }) {
             <label className="block text-sm font-medium text-gray-700">
               Your Answer:
             </label>
-            {(transcript || interimTranscript) && (
+            {hasTranscript(transcript, interimTranscript) && (
               <button
                 onClick={copyToClipboard}
                 className="text-sm text-blue-600 hover:text-blue-800"
@@ -258,40 +168,29 @@ function AnswerRecorder({ question, onTranscriptComplete, onBack }) {
             )}
           </div>
           <div className="border border-gray-300 rounded-lg p-4 min-h-[200px] bg-gray-50">
-            {transcript && (
-              <div className="mb-2">
-                <span className="text-gray-900">{transcript}</span>
-              </div>
-            )}
-            {interimTranscript && (
-              <div>
-                <span className="text-gray-500 italic">{interimTranscript}</span>
-              </div>
-            )}
-            {!transcript && !interimTranscript && (
-              <p className="text-gray-400 italic">
-                Your speech will appear here as you speak...
-              </p>
-            )}
+            <TranscriptDisplay 
+              transcript={transcript} 
+              interimTranscript={interimTranscript} 
+            />
           </div>
         </div>
 
         <div className="flex justify-between">
-          <button
+          <Button
             onClick={handleRetry}
-            disabled={!transcript && !interimTranscript}
-            className="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            disabled={!hasTranscript(transcript, interimTranscript)}
+            variant="outline"
           >
             Retry
-          </button>
+          </Button>
           
-          <button
+          <Button
             onClick={handleSubmit}
-            disabled={!transcript.trim() && !interimTranscript.trim()}
-            className="px-6 py-2 bg-blue-600 text-white rounded-md font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            disabled={!getFinalTranscript(transcript, interimTranscript)}
+            variant="primary"
           >
             Submit Answer
-          </button>
+          </Button>
         </div>
 
         <div className="mt-6 p-4 bg-yellow-50 rounded-md">

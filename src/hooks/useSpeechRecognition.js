@@ -1,26 +1,30 @@
 import { useState, useEffect, useRef } from 'react'
+import { isSpeechRecognitionSupported, getSpeechRecognition } from '../utils/browserUtils.js'
+import { processTranscriptResults } from '../utils/transcriptUtils.js'
+import { SPEECH_RECOGNITION_CONFIG } from '../constants/appConstants.js'
 
 export const useSpeechRecognition = (options = {}) => {
   const [isListening, setIsListening] = useState(false)
+  const [isPaused, setIsPaused] = useState(false)
   const [transcript, setTranscript] = useState('')
   const [interimTranscript, setInterimTranscript] = useState('')
   const [error, setError] = useState('')
   const recognitionRef = useRef(null)
 
   const {
-    lang = 'en-US',
-    continuous = true,
-    interimResults = true,
-    maxAlternatives = 1
+    lang = SPEECH_RECOGNITION_CONFIG.lang,
+    continuous = SPEECH_RECOGNITION_CONFIG.continuous,
+    interimResults = SPEECH_RECOGNITION_CONFIG.interimResults,
+    maxAlternatives = SPEECH_RECOGNITION_CONFIG.maxAlternatives
   } = options
 
   useEffect(() => {
-    if (!window.SpeechRecognition && !window.webkitSpeechRecognition) {
+    if (!isSpeechRecognitionSupported()) {
       setError('Speech recognition is not supported in this browser')
       return
     }
 
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    const SpeechRecognition = getSpeechRecognition()
     recognitionRef.current = new SpeechRecognition()
     
     const recognition = recognitionRef.current
@@ -31,22 +35,12 @@ export const useSpeechRecognition = (options = {}) => {
 
     recognition.onstart = () => {
       setIsListening(true)
+      setIsPaused(false)
       setError('')
     }
 
     recognition.onresult = (event) => {
-      let finalTranscript = ''
-      let interimTranscript = ''
-
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript
-        if (event.results[i].isFinal) {
-          finalTranscript += transcript
-        } else {
-          interimTranscript += transcript
-        }
-      }
-
+      const { finalTranscript, interimTranscript } = processTranscriptResults(event)
       setTranscript(prev => prev + finalTranscript)
       setInterimTranscript(interimTranscript)
     }
@@ -54,10 +48,12 @@ export const useSpeechRecognition = (options = {}) => {
     recognition.onerror = (event) => {
       setError(`Speech recognition error: ${event.error}`)
       setIsListening(false)
+      setIsPaused(false)
     }
 
     recognition.onend = () => {
       setIsListening(false)
+      setIsPaused(false)
     }
 
     return () => {
@@ -82,19 +78,36 @@ export const useSpeechRecognition = (options = {}) => {
     }
   }
 
+  const pauseListening = () => {
+    if (recognitionRef.current && isListening) {
+      recognitionRef.current.stop()
+      setIsPaused(true)
+    }
+  }
+
+  const resumeListening = () => {
+    if (isPaused) {
+      startListening()
+    }
+  }
+
   const reset = () => {
     setTranscript('')
     setInterimTranscript('')
     setError('')
+    setIsPaused(false)
   }
 
   return {
     isListening,
+    isPaused,
     transcript,
     interimTranscript,
     error,
     startListening,
     stopListening,
+    pauseListening,
+    resumeListening,
     reset
   }
 } 

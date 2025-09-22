@@ -1,17 +1,22 @@
 import React, { useState } from 'react'
+import { validateJobInput } from '../utils/validation.js'
 
-function JobInput({ onSubmit }) {
+const JobInput = React.memo(function JobInput({ onSubmit }) {
   const [jd, setJd] = useState('')
   const [role, setRole] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [validationError, setValidationError] = useState('')
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!jd.trim() || !role.trim()) {
-      alert('Please fill in both the job description and role title.')
+    
+    const { isValid, errors } = validateJobInput(jd, role)
+    if (!isValid) {
+      setValidationError(errors.join('. '))
       return
     }
 
+    setValidationError('')
     setIsSubmitting(true)
     await onSubmit(jd.trim(), role.trim())
     setIsSubmitting(false)
@@ -24,6 +29,12 @@ function JobInput({ onSubmit }) {
           Enter Job Details
         </h2>
         
+        {validationError && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+            <p className="text-red-800 text-sm">{validationError}</p>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
             <label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-2">
@@ -77,6 +88,6 @@ function JobInput({ onSubmit }) {
       </div>
     </div>
   )
-}
+})
 
 export default JobInput 
