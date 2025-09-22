@@ -5,7 +5,10 @@ function AnswerRecorder({ question, onTranscriptComplete, onBack }) {
   const [transcript, setTranscript] = useState('')
   const [interimTranscript, setInterimTranscript] = useState('')
   const [error, setError] = useState('')
+  const [isPaused, setIsPaused] = useState(false)
+  const [recordingTime, setRecordingTime] = useState(0)
   const recognitionRef = useRef(null)
+  const timerRef = useRef(null)
 
   useEffect(() => {
     // Check if SpeechRecognition is supported
@@ -22,10 +25,13 @@ function AnswerRecorder({ question, onTranscriptComplete, onBack }) {
     recognition.continuous = true
     recognition.interimResults = true
     recognition.lang = 'en-US'
+    recognition.maxAlternatives = 3
 
     recognition.onstart = () => {
       setIsRecording(true)
+      setIsPaused(false)
       setError('')
+      startTimer()
     }
 
     recognition.onresult = (event) => {
@@ -47,20 +53,52 @@ function AnswerRecorder({ question, onTranscriptComplete, onBack }) {
 
     recognition.onerror = (event) => {
       console.error('Speech recognition error:', event.error)
-      setError(`Speech recognition error: ${event.error}`)
+      if (event.error === 'no-speech') {
+        setError('No speech detected. Please try speaking again.')
+      } else if (event.error === 'audio-capture') {
+        setError('Microphone access denied. Please allow microphone access and try again.')
+      } else if (event.error === 'not-allowed') {
+        setError('Microphone access denied. Please allow microphone access and try again.')
+      } else {
+        setError(`Speech recognition error: ${event.error}`)
+      }
       setIsRecording(false)
+      stopTimer()
     }
 
     recognition.onend = () => {
       setIsRecording(false)
+      setIsPaused(false)
+      stopTimer()
     }
 
     return () => {
       if (recognitionRef.current) {
         recognitionRef.current.stop()
       }
+      stopTimer()
     }
   }, [])
+
+  const startTimer = () => {
+    setRecordingTime(0)
+    timerRef.current = setInterval(() => {
+      setRecordingTime(prev => prev + 1)
+    }, 1000)
+  }
+
+  const stopTimer = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current)
+      timerRef.current = null
+    }
+  }
+
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins}:${secs.toString().padStart(2, '0')}`
+  }
 
   const startRecording = () => {
     if (recognitionRef.current) {
@@ -77,6 +115,20 @@ function AnswerRecorder({ question, onTranscriptComplete, onBack }) {
     }
   }
 
+  const pauseRecording = () => {
+    if (recognitionRef.current && isRecording) {
+      recognitionRef.current.stop()
+      setIsPaused(true)
+      stopTimer()
+    }
+  }
+
+  const resumeRecording = () => {
+    if (isPaused) {
+      startRecording()
+    }
+  }
+
   const handleSubmit = () => {
     const finalTranscript = transcript + interimTranscript
     if (finalTranscript.trim()) {
@@ -88,6 +140,21 @@ function AnswerRecorder({ question, onTranscriptComplete, onBack }) {
     setTranscript('')
     setInterimTranscript('')
     setError('')
+    setRecordingTime(0)
+  }
+
+  const copyToClipboard = () => {
+    const finalTranscript = transcript + interimTranscript
+    if (finalTranscript.trim()) {
+      navigator.clipboard.writeText(finalTranscript.trim())
+        .then(() => {
+          // You could add a toast notification here
+          console.log('Transcript copied to clipboard')
+        })
+        .catch(err => {
+          console.error('Failed to copy transcript:', err)
+        })
+    }
   }
 
   return (
@@ -118,7 +185,7 @@ function AnswerRecorder({ question, onTranscriptComplete, onBack }) {
         )}
 
         <div className="mb-6">
-          <div className="flex justify-center mb-4">
+          <div className="flex justify-center items-center gap-4 mb-4">
             <button
               onClick={isRecording ? stopRecording : startRecording}
               disabled={!!error}
@@ -138,17 +205,58 @@ function AnswerRecorder({ question, onTranscriptComplete, onBack }) {
                 </svg>
               )}
             </button>
+
+            {isRecording && (
+              <button
+                onClick={pauseRecording}
+                className="w-12 h-12 rounded-full bg-yellow-500 hover:bg-yellow-600 flex items-center justify-center text-white"
+              >
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+              </button>
+            )}
+
+            {isPaused && (
+              <button
+                onClick={resumeRecording}
+                className="w-12 h-12 rounded-full bg-green-500 hover:bg-green-600 flex items-center justify-center text-white"
+              >
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+                </svg>
+              </button>
+            )}
           </div>
           
-          <p className="text-center text-sm text-gray-600">
-            {isRecording ? 'Recording... Click to stop' : 'Click the microphone to start recording'}
-          </p>
+          <div className="text-center">
+            <p className="text-sm text-gray-600 mb-2">
+              {isRecording ? 'Recording... Click to stop' : 
+               isPaused ? 'Paused... Click to resume' : 
+               'Click the microphone to start recording'}
+            </p>
+            {isRecording && (
+              <p className="text-lg font-mono text-blue-600">
+                {formatTime(recordingTime)}
+              </p>
+            )}
+          </div>
         </div>
 
         <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Your Answer:
-          </label>
+          <div className="flex justify-between items-center mb-2">
+            <label className="block text-sm font-medium text-gray-700">
+              Your Answer:
+            </label>
+            {(transcript || interimTranscript) && (
+              <button
+                onClick={copyToClipboard}
+                className="text-sm text-blue-600 hover:text-blue-800"
+              >
+                Copy to clipboard
+              </button>
+            )}
+          </div>
           <div className="border border-gray-300 rounded-lg p-4 min-h-[200px] bg-gray-50">
             {transcript && (
               <div className="mb-2">
@@ -193,6 +301,7 @@ function AnswerRecorder({ question, onTranscriptComplete, onBack }) {
             <li>• Use the STAR method for behavioral questions</li>
             <li>• Include specific examples and outcomes</li>
             <li>• Take your time - you can pause and continue</li>
+            <li>• Ensure your microphone is working and accessible</li>
           </ul>
         </div>
       </div>
