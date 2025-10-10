@@ -1,141 +1,49 @@
-import { useState, useCallback, useMemo } from 'react'
+import React from 'react'
+import { Routes, Route, Navigate, Link, useLocation } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
-import ViewRenderer from './components/ViewRenderer'
+import { AppProvider, useAppContext } from './context/AppContext'
 import ErrorMessage from './components/shared/ui/ErrorMessage'
 import LoadingSpinner from './components/shared/ui/LoadingSpinner'
-import { apiService } from './services/apiService'
-import { logger } from './utils/logger'
-import { MOCK_QUESTIONS, MOCK_FEEDBACK, type Feedback } from './constants/mockData'
-import { VIEWS, type ViewType } from './constants/appConstants'
+import DashboardPage from './pages/DashboardPage'
+import JobInputPage from './pages/JobInputPage'
+import QuestionListPage from './pages/QuestionListPage'
+import AnswerRecorderPage from './pages/AnswerRecorderPage'
+import FeedbackPage from './pages/FeedbackPage'
+import ComponentsDemo from './pages/ComponentsDemo'
 
-interface JobData {
-  jd: string
-  role: string
-}
+const AppContent: React.FC = () => {
+  const { error, loading, setError } = useAppContext()
+  const location = useLocation()
 
-function App(): JSX.Element {
-  const [currentView, setCurrentView] = useState<ViewType>(VIEWS.JOB_INPUT)
-  const [jobData, setJobData] = useState<JobData>({ jd: '', role: '' })
-  const [questions, setQuestions] = useState<string[]>([])
-  const [selectedQuestion, setSelectedQuestion] = useState<string>('')
-  const [transcript, setTranscript] = useState<string>('')
-  const [feedback, setFeedback] = useState<Feedback | null>(null)
-  const [loading, setLoading] = useState<boolean>(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const resetToInitialState = useCallback(() => {
-    setCurrentView(VIEWS.JOB_INPUT)
-    setJobData({ jd: '', role: '' })
-    setQuestions([])
-    setSelectedQuestion('')
-    setTranscript('')
-    setFeedback(null)
-    setError(null)
-  }, [])
-
-  const handleJobSubmit = useCallback(async (jd: string, role: string) => {
-    setLoading(true)
-    setError(null)
-    
-    try {
-      logger.info('Sending job description to backend:', { role, jobDescription: jd })
-      
-      const data = await apiService.parseJobDescription(role, jd)
-      logger.info('Backend response:', data)
-
-      setJobData({ jd, role })
-      setQuestions(data.questions || [])
-      setCurrentView(VIEWS.QUESTION_LIST)
-    } catch (error) {
-      logger.error('Error parsing JD:', error)
-      setError(`Failed to generate questions: ${error instanceof Error ? error.message : 'Unknown error'}`)
-      
-      // Fallback to mock data
-      setJobData({ jd, role })
-      setQuestions(MOCK_QUESTIONS)
-      setCurrentView(VIEWS.QUESTION_LIST)
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  const handleQuestionSelect = useCallback((question: string) => {
-    setSelectedQuestion(question)
-    setCurrentView(VIEWS.ANSWER_RECORDER)
-  }, [])
-
-  const handleTranscriptComplete = useCallback(async (transcript: string) => {
-    setTranscript(transcript)
-    setLoading(true)
-    setError(null)
-    
-    try {
-      logger.info('Sending answer for analysis:', {
-        jobDescription: jobData.jd,
-        question: selectedQuestion,
-        answer: transcript
-      })
-      
-      const data = await apiService.analyzeAnswer(jobData.jd, selectedQuestion, transcript)
-      logger.info('Analysis response:', data)
-
-      setFeedback(data as Feedback)
-      setCurrentView(VIEWS.FEEDBACK)
-    } catch (error) {
-      logger.error('Error analyzing answer:', error)
-      setError(`Failed to analyze answer: ${error instanceof Error ? error.message : 'Unknown error'}`)
-      
-      // Fallback to mock feedback
-      setFeedback(MOCK_FEEDBACK)
-      setCurrentView(VIEWS.FEEDBACK)
-    } finally {
-      setLoading(false)
-    }
-  }, [jobData.jd, selectedQuestion])
-
-  const handleStartOver = useCallback(() => {
-    resetToInitialState()
-  }, [resetToInitialState])
-
-  const handleNextQuestion = useCallback(() => {
-    setCurrentView(VIEWS.QUESTION_LIST)
-    setSelectedQuestion('')
-    setTranscript('')
-    setFeedback(null)
-    setError(null)
-  }, [])
-
-  const viewProps = useMemo(() => ({
-    // JobInput props
-    onSubmit: handleJobSubmit,
-    
-    // QuestionList props
-    questions,
-    onQuestionSelect: handleQuestionSelect,
-    onStartOver: handleStartOver,
-    
-    // AnswerRecorder props
-    question: selectedQuestion,
-    onTranscriptComplete: handleTranscriptComplete,
-    onBack: () => setCurrentView(VIEWS.QUESTION_LIST),
-    
-    // FeedbackView props
-    feedback,
-    transcript,
-    onNextQuestion: handleNextQuestion
-  }), [handleJobSubmit, questions, handleQuestionSelect, handleStartOver, selectedQuestion, handleTranscriptComplete, feedback, transcript, handleNextQuestion])
+  // Show demo if on demo route
+  if (location.pathname === '/demo') {
+    return <ComponentsDemo />
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <Toaster position="top-right" />
       <div className="max-w-4xl mx-auto px-4">
         <header className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">
-            InterviewIQ
-          </h1>
-          <p className="text-gray-600">
-            AI-powered interview coaching with intelligent feedback
-          </p>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex-1"></div>
+            <div className="flex-1 text-center">
+              <Link to="/dashboard" className="text-4xl font-bold text-gray-900 mb-2 hover:text-blue-600 transition-colors">
+                InterviewIQ
+              </Link>
+              <p className="text-gray-600">
+                AI-powered interview coaching with intelligent feedback
+              </p>
+            </div>
+            <div className="flex-1 flex justify-end">
+              <Link
+                to="/demo"
+                className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                View Components Demo
+              </Link>
+            </div>
+          </div>
         </header>
 
         <ErrorMessage error={error} onDismiss={() => setError(null)} />
@@ -143,13 +51,26 @@ function App(): JSX.Element {
         {loading && <LoadingSpinner message="Processing..." />}
 
         {!loading && (
-          <ViewRenderer 
-            currentView={currentView} 
-            viewProps={viewProps}
-          />
+          <Routes>
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/interview/new" element={<JobInputPage />} />
+            <Route path="/interview/questions" element={<QuestionListPage />} />
+            <Route path="/interview/record" element={<AnswerRecorderPage />} />
+            <Route path="/interview/feedback" element={<FeedbackPage />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
         )}
       </div>
     </div>
+  )
+}
+
+function App(): JSX.Element {
+  return (
+    <AppProvider>
+      <AppContent />
+    </AppProvider>
   )
 }
 
