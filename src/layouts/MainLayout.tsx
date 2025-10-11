@@ -167,7 +167,11 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       {/* Main Content */}
       <main className="py-8">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <ErrorMessage error={error} onDismiss={() => setError(null)} />
+          <ErrorMessage 
+            error={error} 
+            onDismiss={() => setError(null)}
+            showNetworkStatus={true}
+          />
           
           {loading && <LoadingSpinner message="Processing..." />}
           
