@@ -1,0 +1,345 @@
+/* Accessibility Styles for WCAG 2.1 AA Compliance */
+
+/* Skip Links */
+.skip-links {
+  position: absolute;
+  top: -40px;
+  left: 6px;
+  z-index: 1000;
+}
+
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 6px;
+  background: #000;
+  color: #fff;
+  padding: 8px 16px;
+  text-decoration: none;
+  border-radius: 4px;
+  font-weight: bold;
+  transition: top 0.3s;
+  z-index: 1000;
+}
+
+.skip-link:focus {
+  top: 6px;
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+/* Screen Reader Only Content */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.sr-only-focusable:focus {
+  position: static;
+  width: auto;
+  height: auto;
+  padding: inherit;
+  margin: inherit;
+  overflow: visible;
+  clip: auto;
+  white-space: normal;
+}
+
+/* Focus Management */
+.focus-manager:focus-within {
+  outline: 2px solid #0066cc;
+  outline-offset: 2px;
+}
+
+/* High Contrast Mode Support */
+@media (prefers-contrast: high) {
+  .skip-link {
+    background: #000;
+    color: #fff;
+    border: 2px solid #fff;
+  }
+  
+  .focus-manager:focus-within {
+    outline: 3px solid #000;
+    outline-offset: 3px;
+  }
+}
+
+/* Reduced Motion Support */
+@media (prefers-reduced-motion: reduce) {
+  .skip-link {
+    transition: none;
+  }
+  
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Focus Indicators */
+button:focus,
+input:focus,
+select:focus,
+textarea:focus,
+[tabindex]:focus {
+  outline: 2px solid #0066cc;
+  outline-offset: 2px;
+}
+
+/* Remove default focus outline for mouse users */
+button:focus:not(:focus-visible),
+input:focus:not(:focus-visible),
+select:focus:not(:focus-visible),
+textarea:focus:not(:focus-visible),
+[tabindex]:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Ensure focus is visible for keyboard users */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid #0066cc;
+  outline-offset: 2px;
+}
+
+/* ARIA Live Regions */
+[aria-live] {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+/* High Contrast Mode for Interactive Elements */
+@media (prefers-contrast: high) {
+  button,
+  input,
+  select,
+  textarea,
+  [role="button"],
+  [role="link"] {
+    border: 2px solid currentColor;
+  }
+  
+  button:hover,
+  input:hover,
+  select:hover,
+  textarea:hover,
+  [role="button"]:hover,
+  [role="link"]:hover {
+    background-color: currentColor;
+    color: white;
+  }
+}
+
+/* Dark Mode Support */
+@media (prefers-color-scheme: dark) {
+  .skip-link {
+    background: #fff;
+    color: #000;
+  }
+  
+  .skip-link:focus {
+    outline: 2px solid #000;
+  }
+}
+
+/* Large Text Support */
+@media (prefers-font-size: large) {
+  body {
+    font-size: 1.2em;
+  }
+}
+
+/* Ensure sufficient color contrast */
+.text-low-contrast {
+  color: #666;
+}
+
+.text-high-contrast {
+  color: #000;
+}
+
+/* Error States */
+[aria-invalid="true"] {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 1px #dc2626;
+}
+
+[aria-invalid="true"]:focus {
+  outline-color: #dc2626;
+}
+
+/* Loading States */
+[aria-busy="true"] {
+  cursor: wait;
+}
+
+[aria-busy="true"]::after {
+  content: " (Loading...)";
+  font-style: italic;
+}
+
+/* Disabled States */
+[aria-disabled="true"] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+[aria-disabled="true"]:focus {
+  outline: none;
+}
+
+/* Hidden Content */
+[aria-hidden="true"] {
+  display: none !important;
+}
+
+/* Announcements */
+.announcements {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+/* Navigation Lists */
+[role="list"] {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+[role="listitem"] {
+  display: block;
+}
+
+/* Form Labels */
+label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+label.required::after {
+  content: " *";
+  color: #dc2626;
+  font-weight: bold;
+}
+
+/* Error Messages */
+[role="alert"] {
+  color: #dc2626;
+  font-weight: 500;
+  margin-top: 0.25rem;
+}
+
+/* Success Messages */
+[role="status"] {
+  color: #059669;
+  font-weight: 500;
+  margin-top: 0.25rem;
+}
+
+/* Progress Indicators */
+[role="progressbar"] {
+  width: 100%;
+  height: 8px;
+  background-color: #e5e7eb;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+[role="progressbar"] > div {
+  height: 100%;
+  background-color: #0066cc;
+  transition: width 0.3s ease;
+}
+
+/* Tab Panels */
+[role="tabpanel"] {
+  padding: 1rem;
+  border: 1px solid #d1d5db;
+  border-top: none;
+}
+
+[role="tab"] {
+  padding: 0.5rem 1rem;
+  border: 1px solid #d1d5db;
+  background-color: #f9fafb;
+  cursor: pointer;
+}
+
+[role="tab"][aria-selected="true"] {
+  background-color: #fff;
+  border-bottom-color: #fff;
+  font-weight: 500;
+}
+
+[role="tab"]:focus {
+  outline: 2px solid #0066cc;
+  outline-offset: -2px;
+}
+
+/* Modal Dialogs */
+[role="dialog"] {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+}
+
+[role="dialog"]::backdrop {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+/* Tooltips */
+[role="tooltip"] {
+  position: absolute;
+  background: #1f2937;
+  color: white;
+  padding: 0.5rem;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  z-index: 1000;
+  max-width: 200px;
+}
+
+/* Ensure proper heading hierarchy */
+h1, h2, h3, h4, h5, h6 {
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+/* Ensure proper spacing for screen readers */
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}

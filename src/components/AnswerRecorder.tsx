@@ -2,6 +2,8 @@ import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 import { useTimer } from '../hooks/useTimer'
 import { isClipboardSupported } from '../utils/browserUtils'
 import { getFinalTranscript, hasTranscript } from '../utils/transcriptUtils'
+// useAccessibility import removed as it's not used in this component
+import { createAccessibleButtonProps } from '../utils/accessibilityUtils'
 import TranscriptDisplay from './TranscriptDisplay'
 import RecordingButton from './RecordingButton'
 import ControlButton from './ControlButton'
@@ -27,6 +29,8 @@ function AnswerRecorder({ question, onTranscriptComplete, onBack }: AnswerRecord
     resumeListening,
     reset
   } = useSpeechRecognition()
+  
+  // Accessibility features are handled by the components themselves
 
   const { time, formatTime, reset: resetTimer } = useTimer(isListening)
 
@@ -81,38 +85,43 @@ function AnswerRecorder({ question, onTranscriptComplete, onBack }: AnswerRecord
           <button
             onClick={onBack}
             className="text-gray-500 hover:text-gray-700 font-medium"
+            {...createAccessibleButtonProps('Go back to questions list')}
           >
             ← Back to Questions
           </button>
         </div>
 
-        <h2 className="text-2xl font-semibold text-gray-900 mb-6">
+        <h1 className="text-2xl font-semibold text-gray-900 mb-6">
           Answer the Question
-        </h2>
+        </h1>
 
         <div className="mb-6 p-4 bg-blue-50 rounded-lg">
-          <h3 className="text-sm font-medium text-blue-900 mb-2">Question:</h3>
-          <p className="text-blue-800">{question}</p>
+          <h2 className="text-sm font-medium text-blue-900 mb-2">Question:</h2>
+          <p className="text-blue-800" aria-label={`Interview question: ${question}`}>
+            {question}
+          </p>
         </div>
 
         {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg" role="alert">
             <p className="text-red-800 text-sm">{error}</p>
           </div>
         )}
 
         <div className="mb-6">
-          <div className="flex justify-center items-center gap-4 mb-4">
+          <div className="flex justify-center items-center gap-4 mb-4" role="group" aria-label="Recording controls">
             <RecordingButton
               isListening={isListening}
               onClick={isListening ? handleStopRecording : handleStartRecording}
               disabled={!!error}
+              aria-label={isListening ? 'Stop recording' : 'Start recording'}
             />
 
             {isListening && (
               <ControlButton
                 onClick={handlePauseRecording}
                 variant="pause"
+                aria-label="Pause recording"
               />
             )}
 
@@ -120,18 +129,19 @@ function AnswerRecorder({ question, onTranscriptComplete, onBack }: AnswerRecord
               <ControlButton
                 onClick={handleResumeRecording}
                 variant="resume"
+                aria-label="Resume recording"
               />
             )}
           </div>
           
           <div className="text-center">
-            <p className="text-sm text-gray-600 mb-2">
+            <p className="text-sm text-gray-600 mb-2" aria-live="polite">
               {isListening ? 'Recording... Click to stop' : 
                isPaused ? 'Paused... Click to resume' : 
                'Click the microphone to start recording'}
             </p>
             {isListening && (
-              <p className="text-lg font-mono text-blue-600">
+              <p className="text-lg font-mono text-blue-600" aria-live="polite" aria-label={`Recording time: ${formatTime(time)}`}>
                 {formatTime(time)}
               </p>
             )}

@@ -5,6 +5,8 @@ import ErrorMessage from '@components/shared/ui/ErrorMessage'
 import LoadingSpinner from '@components/shared/ui/LoadingSpinner'
 import { useAppContext } from '@context/AppContext'
 import { useAuth } from '@context/AuthContext'
+import { useAccessibility } from '@hooks/useAccessibility'
+import { useKeyboardNavigation } from '@hooks/useKeyboardNavigation'
 
 interface MainLayoutProps {
   children: React.ReactNode
@@ -15,9 +17,25 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   const { user, logout } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
+  const { announce } = useAccessibility()
 
   const isEnterprise = user?.role === 'enterprise'
   const isUser = user?.role === 'user'
+
+  // Set up keyboard navigation for main navigation
+  const { containerRef: navRef, handleKeyDown } = useKeyboardNavigation(
+    isUser ? 4 : isEnterprise ? 3 : 0, // Number of navigation items
+    {
+      orientation: 'horizontal',
+      onNavigate: (index) => {
+        // Announce navigation changes
+        const navItems = ['Dashboard', 'Practice', 'Feedback', 'Progress']
+        if (navItems[index]) {
+          announce(`Navigated to ${navItems[index]}`)
+        }
+      }
+    }
+  )
 
   const handleLogout = () => {
     logout()
@@ -29,13 +47,18 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       <Toaster position="top-right" />
       
       {/* Header */}
-      <header className="bg-white shadow-sm border-b">
+      <header 
+        className="bg-white shadow-sm border-b"
+        role="banner"
+        aria-label="Main navigation"
+      >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center">
               <Link 
                 to={isEnterprise ? "/enterprise/dashboard" : "/dashboard"} 
                 className="text-2xl font-bold text-gray-900 hover:text-blue-600 transition-colors"
+                aria-label="InterviewIQ home page"
               >
                 InterviewIQ
                 {isEnterprise && <span className="text-sm text-blue-600 ml-2">Enterprise</span>}
@@ -44,7 +67,13 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
             
             {/* User Navigation */}
             {isUser && (
-              <nav className="hidden md:flex space-x-8">
+              <nav 
+                className="hidden md:flex space-x-8"
+                role="navigation"
+                aria-label="Main navigation"
+                ref={navRef}
+                onKeyDown={handleKeyDown}
+              >
                 <Link
                   to="/dashboard"
                   className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
@@ -52,6 +81,8 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                       ? 'text-blue-600 bg-blue-50'
                       : 'text-gray-700 hover:text-blue-600'
                   }`}
+                  aria-current={location.pathname === '/dashboard' ? 'page' : undefined}
+                  data-navigation-item
                 >
                   Dashboard
                 </Link>
@@ -62,6 +93,8 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                       ? 'text-blue-600 bg-blue-50'
                       : 'text-gray-700 hover:text-blue-600'
                   }`}
+                  aria-current={location.pathname.startsWith('/practice') ? 'page' : undefined}
+                  data-navigation-item
                 >
                   Practice
                 </Link>
@@ -72,6 +105,8 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                       ? 'text-blue-600 bg-blue-50'
                       : 'text-gray-700 hover:text-blue-600'
                   }`}
+                  aria-current={location.pathname.startsWith('/feedback') ? 'page' : undefined}
+                  data-navigation-item
                 >
                   Feedback
                 </Link>
@@ -82,6 +117,8 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                       ? 'text-blue-600 bg-blue-50'
                       : 'text-gray-700 hover:text-blue-600'
                   }`}
+                  aria-current={location.pathname === '/progress' ? 'page' : undefined}
+                  data-navigation-item
                 >
                   Progress
                 </Link>
@@ -165,7 +202,12 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       </header>
 
       {/* Main Content */}
-      <main className="py-8">
+      <main 
+        id="main-content"
+        className="py-8"
+        role="main"
+        aria-label="Main content"
+      >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <ErrorMessage 
             error={error} 
@@ -173,7 +215,13 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
             showNetworkStatus={true}
           />
           
-          {loading && <LoadingSpinner message="Processing..." />}
+          {loading && (
+            <LoadingSpinner 
+              message="Processing..." 
+              aria-live="polite"
+              aria-label="Loading content"
+            />
+          )}
           
           {!loading && children}
         </div>

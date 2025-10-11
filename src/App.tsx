@@ -6,6 +6,9 @@ import MainLayout from '@layouts/MainLayout'
 import ProtectedRoute from '@components/auth/ProtectedRoute'
 import LoadingSpinner from '@components/shared/ui/LoadingSpinner'
 import SessionResume from '@components/session/SessionResume'
+import SkipLinks from '@components/accessibility/SkipLinks'
+import Announcements from '@components/accessibility/Announcements'
+import '@styles/accessibility.css'
 
 // Auth pages
 const Login = lazy(() => import('@pages/auth/Login'))
@@ -80,6 +83,8 @@ const AppContent: React.FC = () => {
 
   return (
     <>
+      <SkipLinks />
+      <Announcements />
       <SessionResume />
       <Suspense fallback={<GlobalLoadingScreen />}>
         <Routes>

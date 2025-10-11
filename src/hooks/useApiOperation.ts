@@ -30,7 +30,7 @@ export const useApiOperation = (): UseApiOperationReturn => {
   const [lastOperation, setLastOperation] = useState<{
     operation: () => Promise<any>
     errorMessage: string
-    fallback?: () => void
+    fallback: (() => void) | undefined
   } | null>(null)
   
   const networkStatus = useNetworkStatus()
