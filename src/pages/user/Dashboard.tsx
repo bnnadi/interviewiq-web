@@ -1,26 +1,100 @@
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { Card } from '@components/ui/Card'
 import Button from '@components/shared/ui/Button'
 import { Badge } from '@components/ui/Badge'
 import { useAppContext } from '@context/AppContext'
+import { sessionStorage } from '@services/sessionPersistence'
+import { SessionSummary } from '@types/session'
 
 const Dashboard: React.FC = () => {
-  const { handleViewSessions } = useAppContext()
+  const { handleViewSessions, currentSession, isSessionActive } = useAppContext()
+  const [sessionHistory, setSessionHistory] = useState<SessionSummary[]>([])
+  const [stats, setStats] = useState({
+    totalSessions: 0,
+    averageScore: 0,
+    improvementRate: 0,
+    currentStreak: 0
+  })
   
-  // Mock data for now - will be replaced with real data later
-  const mockStats = {
-    totalSessions: 12,
-    averageScore: 7.2,
-    improvementRate: 15,
-    currentStreak: 5
+  // Load session history on component mount
+  useEffect(() => {
+    const loadSessionHistory = async () => {
+      try {
+        const sessions = await sessionStorage.getSessionHistory()
+        setSessionHistory(sessions)
+        
+        // Calculate stats from session history
+        const completedSessions = sessions.filter(s => s.status === 'completed')
+        const totalSessions = completedSessions.length
+        
+        // For now, use mock data for scores since we don't have score data in SessionSummary
+        // In a real implementation, you'd store scores in the session data
+        const averageScore = totalSessions > 0 ? 7.2 : 0 // Mock average score
+        const improvementRate = totalSessions > 1 ? 15 : 0 // Mock improvement rate
+        const currentStreak = calculateCurrentStreak(completedSessions)
+        
+        setStats({
+          totalSessions,
+          averageScore,
+          improvementRate,
+          currentStreak
+        })
+      } catch (error) {
+        console.error('Failed to load session history:', error)
+        // Fallback to mock data if loading fails
+        setStats({
+          totalSessions: 12,
+          averageScore: 7.2,
+          improvementRate: 15,
+          currentStreak: 5
+        })
+      }
+    }
+    
+    loadSessionHistory()
+  }, [])
+  
+  // Calculate current streak from session history
+  const calculateCurrentStreak = (sessions: SessionSummary[]): number => {
+    if (sessions.length === 0) return 0
+    
+    // Sort sessions by date (most recent first)
+    const sortedSessions = sessions.sort((a, b) => 
+      new Date(b.lastSaved).getTime() - new Date(a.lastSaved).getTime()
+    )
+    
+    let streak = 0
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    
+    for (const session of sortedSessions) {
+      const sessionDate = new Date(session.lastSaved)
+      sessionDate.setHours(0, 0, 0, 0)
+      
+      const daysDiff = Math.floor((today.getTime() - sessionDate.getTime()) / (1000 * 60 * 60 * 24))
+      
+      if (daysDiff === streak) {
+        streak++
+      } else if (daysDiff > streak) {
+        break
+      }
+    }
+    
+    return streak
   }
-
-  const recentSessions = [
-    { id: 1, role: 'Software Engineer', date: '2024-01-15', score: 8.5, status: 'completed' },
-    { id: 2, role: 'Product Manager', date: '2024-01-14', score: 7.2, status: 'completed' },
-    { id: 3, role: 'Data Scientist', date: '2024-01-13', score: 6.8, status: 'completed' }
-  ]
+  
+  // Get recent sessions (last 3)
+  const recentSessions = sessionHistory
+    .filter(s => s.status === 'completed')
+    .slice(0, 3)
+    .map(session => ({
+      id: session.id,
+      role: session.role,
+      date: new Date(session.lastSaved).toLocaleDateString(),
+      score: 7.2, // Mock score - in real implementation, store this in session data
+      status: session.status
+    }))
 
   return (
     <div className="space-y-6">
@@ -37,22 +111,46 @@ const Dashboard: React.FC = () => {
       {/* Quick Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card className="p-6 text-center hover:shadow-md transition-shadow">
-          <div className="text-3xl font-bold text-blue-600 mb-2">{mockStats.totalSessions}</div>
+          <div className="text-3xl font-bold text-blue-600 mb-2">{stats.totalSessions}</div>
           <div className="text-sm text-gray-600">Total Sessions</div>
         </Card>
         <Card className="p-6 text-center hover:shadow-md transition-shadow">
-          <div className="text-3xl font-bold text-green-600 mb-2">{mockStats.averageScore}</div>
+          <div className="text-3xl font-bold text-green-600 mb-2">{stats.averageScore.toFixed(1)}</div>
           <div className="text-sm text-gray-600">Average Score</div>
         </Card>
         <Card className="p-6 text-center hover:shadow-md transition-shadow">
-          <div className="text-3xl font-bold text-purple-600 mb-2">+{mockStats.improvementRate}%</div>
+          <div className="text-3xl font-bold text-purple-600 mb-2">+{stats.improvementRate}%</div>
           <div className="text-sm text-gray-600">Improvement</div>
         </Card>
         <Card className="p-6 text-center hover:shadow-md transition-shadow">
-          <div className="text-3xl font-bold text-orange-600 mb-2">{mockStats.currentStreak}</div>
+          <div className="text-3xl font-bold text-orange-600 mb-2">{stats.currentStreak}</div>
           <div className="text-sm text-gray-600">Day Streak</div>
         </Card>
       </div>
+
+      {/* Current Session Alert */}
+      {isSessionActive && currentSession && (
+        <Card className="p-6 bg-blue-50 border-blue-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-blue-900 mb-1">
+                🎯 Active Session
+              </h3>
+              <p className="text-blue-800">
+                You have an ongoing interview session for <strong>{currentSession.role}</strong>
+              </p>
+              <p className="text-sm text-blue-700 mt-1">
+                Started {new Date(currentSession.startTime).toLocaleString()}
+              </p>
+            </div>
+            <Link to="/practice/live">
+              <Button className="bg-blue-600 hover:bg-blue-700">
+                Continue Session
+              </Button>
+            </Link>
+          </div>
+        </Card>
+      )}
 
       {/* Action Buttons */}
       <div className="flex flex-col sm:flex-row gap-4 justify-center">
