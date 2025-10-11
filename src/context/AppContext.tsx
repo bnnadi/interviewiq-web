@@ -136,7 +136,11 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
       navigate('/interview/questions')
     } catch (error) {
       logger.error('Error parsing JD:', error)
-      setError(`Failed to generate questions: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      
+      // Use enhanced error handling - check if it's an ApiError with user message
+      const apiError = error as any
+      const errorMessage = apiError.userMessage || `Failed to generate questions: ${error instanceof Error ? error.message : 'Unknown error'}`
+      setError(errorMessage)
       
       // Fallback to mock data
       const questions = MOCK_QUESTIONS
@@ -196,7 +200,11 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
       navigate('/interview/feedback')
     } catch (error) {
       logger.error('Error analyzing answer:', error)
-      setError(`Failed to analyze answer: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      
+      // Use enhanced error handling - check if it's an ApiError with user message
+      const apiError = error as any
+      const errorMessage = apiError.userMessage || `Failed to analyze answer: ${error instanceof Error ? error.message : 'Unknown error'}`
+      setError(errorMessage)
       
       // Fallback to mock feedback
       setFeedback(MOCK_FEEDBACK)
