@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from '@context/AuthContext'
 import MainLayout from '@layouts/MainLayout'
 import ProtectedRoute from '@components/auth/ProtectedRoute'
 import LoadingSpinner from '@components/shared/ui/LoadingSpinner'
+import SessionResume from '@components/session/SessionResume'
 
 // Auth pages
 const Login = lazy(() => import('@pages/auth/Login'))
@@ -78,19 +79,21 @@ const AppContent: React.FC = () => {
   }
 
   return (
-    <Suspense fallback={<GlobalLoadingScreen />}>
-      <Routes>
-        {/* Auth Routes */}
-        <Route path="/login" element={<Login />} />
-        <Route path="/signup" element={<Signup />} />
-        <Route path="/forgot-password" element={<ForgotPassword />} />
-        
-        {/* Enterprise Auth Routes */}
-        <Route path="/enterprise/login" element={<EnterpriseLogin />} />
-        <Route path="/enterprise/invite" element={<InviteAccept />} />
-        
-        {/* Root redirect */}
-        <Route path="/" element={<RootRedirect />} />
+    <>
+      <SessionResume />
+      <Suspense fallback={<GlobalLoadingScreen />}>
+        <Routes>
+          {/* Auth Routes */}
+          <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<Signup />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          
+          {/* Enterprise Auth Routes */}
+          <Route path="/enterprise/login" element={<EnterpriseLogin />} />
+          <Route path="/enterprise/invite" element={<InviteAccept />} />
+          
+          {/* Root redirect */}
+          <Route path="/" element={<RootRedirect />} />
         
         {/* User Routes - Protected */}
         <Route path="/dashboard" element={
@@ -223,10 +226,11 @@ const AppContent: React.FC = () => {
           </ProtectedRoute>
         } />
         
-        {/* 404 Route */}
-        <Route path="*" element={<NotFound />} />
-      </Routes>
-    </Suspense>
+          {/* 404 Route */}
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </Suspense>
+    </>
   )
 }
 
