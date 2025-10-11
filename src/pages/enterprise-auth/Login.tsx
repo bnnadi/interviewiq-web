@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import AuthLayout from '@layouts/AuthLayout'
+import EnterpriseAuthLayout from '@layouts/EnterpriseAuthLayout'
 import Button from '@components/shared/ui/Button'
 import { useAuth } from '@context/AuthContext'
 
@@ -39,78 +39,79 @@ const EnterpriseLogin: React.FC = () => {
   }
 
   return (
-    <AuthLayout 
+    <EnterpriseAuthLayout 
       title="Enterprise Login" 
       subtitle="Access your organization's InterviewIQ dashboard"
     >
-      {/* Enterprise Branding */}
-      <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-        <div className="flex items-center justify-center mb-2">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-            <span className="text-white font-bold text-sm">IQ</span>
-          </div>
-          <span className="ml-2 text-lg font-semibold text-blue-900">
-            InterviewIQ Enterprise
-          </span>
-        </div>
-        <p className="text-sm text-blue-800 text-center">
-          Powered by InterviewIQ Enterprise
-        </p>
-      </div>
-
       <form onSubmit={handleSubmit} className="space-y-6">
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-md text-sm">
+          <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl text-sm flex items-center">
+            <span className="mr-2">⚠️</span>
             {error}
           </div>
         )}
 
         <div>
-          <label htmlFor="organization" className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="organization" className="block text-sm font-medium text-gray-700 mb-2">
             Organization
           </label>
-          <input
-            id="organization"
-            name="organization"
-            type="text"
-            required
-            value={formData.organization}
-            onChange={handleChange}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-            placeholder="Enter your organization name"
-          />
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <span className="text-gray-400 text-lg">🏢</span>
+            </div>
+            <input
+              id="organization"
+              name="organization"
+              type="text"
+              required
+              value={formData.organization}
+              onChange={handleChange}
+              className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-200"
+              placeholder="Enter your organization name"
+            />
+          </div>
         </div>
 
         <div>
-          <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
             Work Email Address
           </label>
-          <input
-            id="email"
-            name="email"
-            type="email"
-            required
-            value={formData.email}
-            onChange={handleChange}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-            placeholder="Enter your work email"
-          />
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <span className="text-gray-400 text-lg">📧</span>
+            </div>
+            <input
+              id="email"
+              name="email"
+              type="email"
+              required
+              value={formData.email}
+              onChange={handleChange}
+              className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-200"
+              placeholder="Enter your work email"
+            />
+          </div>
         </div>
 
         <div>
-          <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
             Password
           </label>
-          <input
-            id="password"
-            name="password"
-            type="password"
-            required
-            value={formData.password}
-            onChange={handleChange}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-            placeholder="Enter your password"
-          />
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <span className="text-gray-400 text-lg">🔒</span>
+            </div>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              required
+              value={formData.password}
+              onChange={handleChange}
+              className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-200"
+              placeholder="Enter your password"
+            />
+          </div>
         </div>
 
         <div className="flex items-center justify-between">
@@ -139,9 +140,16 @@ const EnterpriseLogin: React.FC = () => {
         <Button
           type="submit"
           disabled={isLoading}
-          className="w-full py-2"
+          className="w-full py-3 text-base font-medium rounded-xl transition-all duration-200 transform hover:scale-[1.02] disabled:scale-100 disabled:opacity-50"
         >
-          {isLoading ? 'Signing in...' : 'Sign In to Enterprise'}
+          {isLoading ? (
+            <div className="flex items-center justify-center">
+              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+              Signing in...
+            </div>
+          ) : (
+            'Sign In to Enterprise'
+          )}
         </Button>
 
         {/* SSO Button Placeholder */}
@@ -159,10 +167,13 @@ const EnterpriseLogin: React.FC = () => {
             <Button
               type="button"
               variant="outline"
-              className="w-full py-2"
+              className="w-full py-3 rounded-xl border-2 border-gray-300 hover:border-indigo-300 transition-all duration-200"
               disabled
             >
-              🔐 Single Sign-On (SSO)
+              <div className="flex items-center justify-center">
+                <span className="mr-2">🔐</span>
+                Single Sign-On (SSO)
+              </div>
             </Button>
             <p className="text-xs text-gray-500 text-center mt-2">
               SSO integration coming soon
@@ -175,23 +186,15 @@ const EnterpriseLogin: React.FC = () => {
             Need access?{' '}
             <Link
               to="/enterprise/contact"
-              className="font-medium text-blue-600 hover:text-blue-500"
+              className="font-medium text-indigo-600 hover:text-indigo-500 transition-colors"
             >
               Contact your administrator
             </Link>
           </span>
         </div>
 
-        <div className="mt-6 text-center">
-          <Link
-            to="/login"
-            className="text-sm text-gray-600 hover:text-gray-500"
-          >
-            Regular user login
-          </Link>
-        </div>
       </form>
-    </AuthLayout>
+    </EnterpriseAuthLayout>
   )
 }
 
