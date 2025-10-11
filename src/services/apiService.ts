@@ -29,13 +29,15 @@ export class ApiService {
   }
 
   private createApiError(
-    message: string, 
-    originalError: Error, 
-    status?: number, 
+    message: string,
+    originalError: Error,
+    status: number | undefined = undefined,
     retryable: boolean = true
   ): ApiError {
     const error = new Error(message) as ApiError
-    error.status = status
+    if (status !== undefined) {
+      error.status = status
+    }
     error.retryable = retryable
     error.userMessage = this.getUserFriendlyMessage(originalError, status)
     return error
@@ -82,9 +84,9 @@ export class ApiService {
   }
 
   private async makeRequest<T>(
-    endpoint: string, 
-    data: unknown, 
-    operation: string,
+    endpoint: string,
+    data: unknown,
+    _operation: string,
     options: {
       timeout?: number
       retries?: number

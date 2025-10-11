@@ -5,7 +5,7 @@ import Button from '@components/shared/ui/Button'
 import { Badge } from '@components/ui/Badge'
 import { useAppContext } from '@context/AppContext'
 import { sessionStorage } from '@services/sessionPersistence'
-import { SessionSummary } from '@types/session'
+import { SessionSummary } from '../../types/session'
 
 const Dashboard: React.FC = () => {
   const { handleViewSessions, currentSession, isSessionActive } = useAppContext()
@@ -21,11 +21,11 @@ const Dashboard: React.FC = () => {
   useEffect(() => {
     const loadSessionHistory = async () => {
       try {
-        const sessions = await sessionStorage.getSessionHistory()
+        const sessions = await sessionStorage.getAllSessions()
         setSessionHistory(sessions)
         
         // Calculate stats from session history
-        const completedSessions = sessions.filter(s => s.status === 'completed')
+        const completedSessions = sessions.filter((s: SessionSummary) => s.status === 'completed')
         const totalSessions = completedSessions.length
         
         // For now, use mock data for scores since we don't have score data in SessionSummary
