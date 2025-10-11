@@ -28,6 +28,7 @@ const FeedbackBody = lazy(() => import('@pages/user/Feedback/Body'))
 const UserProgress = lazy(() => import('@pages/user/Progress'))
 const UserSettings = lazy(() => import('@pages/user/Settings'))
 const UserProfile = lazy(() => import('@pages/user/Profile'))
+const DataManagement = lazy(() => import('@pages/user/DataManagement'))
 
 // Enterprise pages
 const EnterpriseDashboard = lazy(() => import('@pages/enterprise/Dashboard'))
@@ -158,13 +159,21 @@ const AppContent: React.FC = () => {
           </ProtectedRoute>
         } />
         
-        <Route path="/profile" element={
-          <ProtectedRoute requiredRole="user">
-            <MainLayout>
-              <UserProfile />
-            </MainLayout>
-          </ProtectedRoute>
-        } />
+                 <Route path="/profile" element={
+                   <ProtectedRoute requiredRole="user">
+                     <MainLayout>
+                       <UserProfile />
+                     </MainLayout>
+                   </ProtectedRoute>
+                 } />
+
+                 <Route path="/data" element={
+                   <ProtectedRoute requiredRole="user">
+                     <MainLayout>
+                       <DataManagement />
+                     </MainLayout>
+                   </ProtectedRoute>
+                 } />
         
         {/* Enterprise Routes - Protected */}
         <Route path="/enterprise/dashboard" element={

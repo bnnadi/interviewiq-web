@@ -22,14 +22,14 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   const isEnterprise = user?.role === 'enterprise'
   const isUser = user?.role === 'user'
 
-  // Set up keyboard navigation for main navigation
-  const { containerRef: navRef, handleKeyDown } = useKeyboardNavigation(
-    isUser ? 4 : isEnterprise ? 3 : 0, // Number of navigation items
+         // Set up keyboard navigation for main navigation
+         const { containerRef: navRef, handleKeyDown } = useKeyboardNavigation(
+           isUser ? 5 : isEnterprise ? 3 : 0, // Number of navigation items
     {
       orientation: 'horizontal',
-      onNavigate: (index) => {
-        // Announce navigation changes
-        const navItems = ['Dashboard', 'Practice', 'Feedback', 'Progress']
+             onNavigate: (index) => {
+               // Announce navigation changes
+               const navItems = ['Dashboard', 'Practice', 'Feedback', 'Progress', 'Data']
         if (navItems[index]) {
           announce(`Navigated to ${navItems[index]}`)
         }
@@ -110,18 +110,30 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                 >
                   Feedback
                 </Link>
-                <Link
-                  to="/progress"
-                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                    location.pathname === '/progress'
-                      ? 'text-blue-600 bg-blue-50'
-                      : 'text-gray-700 hover:text-blue-600'
-                  }`}
-                  aria-current={location.pathname === '/progress' ? 'page' : undefined}
-                  data-navigation-item
-                >
-                  Progress
-                </Link>
+                       <Link
+                         to="/progress"
+                         className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                           location.pathname === '/progress'
+                             ? 'text-blue-600 bg-blue-50'
+                             : 'text-gray-700 hover:text-blue-600'
+                         }`}
+                         aria-current={location.pathname === '/progress' ? 'page' : undefined}
+                         data-navigation-item
+                       >
+                         Progress
+                       </Link>
+                       <Link
+                         to="/data"
+                         className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                           location.pathname === '/data'
+                             ? 'text-blue-600 bg-blue-50'
+                             : 'text-gray-700 hover:text-blue-600'
+                         }`}
+                         aria-current={location.pathname === '/data' ? 'page' : undefined}
+                         data-navigation-item
+                       >
+                         Data
+                       </Link>
               </nav>
             )}
 
