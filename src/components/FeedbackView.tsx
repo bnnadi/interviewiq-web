@@ -1,17 +1,21 @@
-import React from 'react'
+import React, { useMemo } from 'react'
+import { getDisplayScore, getScoreColor, getScoreLabel } from '../utils/scoreUtils'
+import MissingKeywords from './MissingKeywords'
+import Button from './shared/ui/Button'
+import { type Feedback } from '../constants/mockData'
 
-function FeedbackView({ feedback, transcript, question, onNextQuestion, onStartOver }) {
-  const getScoreColor = (score) => {
-    if (score >= 8) return 'text-green-600'
-    if (score >= 6) return 'text-yellow-600'
-    return 'text-red-600'
-  }
+interface FeedbackViewProps {
+  feedback: Feedback
+  transcript: string
+  question: string
+  onNextQuestion: () => void
+  onStartOver: () => void
+}
 
-  const getScoreLabel = (score) => {
-    if (score >= 8) return 'Excellent'
-    if (score >= 6) return 'Good'
-    return 'Needs Improvement'
-  }
+const FeedbackView = React.memo<FeedbackViewProps>(function FeedbackView({ feedback, transcript, question, onNextQuestion, onStartOver }) {
+  const displayScore = useMemo(() => getDisplayScore(feedback.score), [feedback.score])
+  const scoreColor = useMemo(() => getScoreColor(displayScore), [displayScore])
+  const scoreLabel = useMemo(() => getScoreLabel(displayScore), [displayScore])
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -53,37 +57,18 @@ function FeedbackView({ feedback, transcript, question, onNextQuestion, onStartO
               </p>
             </div>
             <div className="text-center">
-              <div className={`text-4xl font-bold ${getScoreColor(feedback.score)}`}>
-                {feedback.score}/10
+              <div className={`text-4xl font-bold ${scoreColor}`}>
+                {displayScore}/10
               </div>
-              <div className={`text-sm font-medium ${getScoreColor(feedback.score)}`}>
-                {getScoreLabel(feedback.score)}
+              <div className={`text-sm font-medium ${scoreColor}`}>
+                {scoreLabel}
               </div>
             </div>
           </div>
         </div>
 
         {/* Missing Keywords */}
-        {feedback.missingKeywords && feedback.missingKeywords.length > 0 && (
-          <div className="mb-8 p-6 bg-red-50 rounded-lg">
-            <h3 className="text-lg font-semibold text-red-900 mb-3">
-              Missing Keywords from Job Description
-            </h3>
-            <div className="flex flex-wrap gap-2">
-              {feedback.missingKeywords.map((keyword, index) => (
-                <span
-                  key={index}
-                  className="px-3 py-1 bg-red-100 text-red-800 text-sm font-medium rounded-full"
-                >
-                  {keyword}
-                </span>
-              ))}
-            </div>
-            <p className="text-red-700 text-sm mt-3">
-              Consider incorporating these keywords naturally into your future answers to better align with the job requirements.
-            </p>
-          </div>
-        )}
+        <MissingKeywords keywords={feedback.missingKeywords} />
 
         {/* Improvements */}
         <div className="mb-8 p-6 bg-yellow-50 rounded-lg">
@@ -117,19 +102,21 @@ function FeedbackView({ feedback, transcript, question, onNextQuestion, onStartO
 
         {/* Action Buttons */}
         <div className="flex justify-between">
-          <button
+          <Button
             onClick={onNextQuestion}
-            className="px-6 py-3 bg-blue-600 text-white rounded-md font-medium hover:bg-blue-700 transition-colors"
+            variant="primary"
+            size="lg"
           >
             Practice Another Question
-          </button>
+          </Button>
           
-          <button
+          <Button
             onClick={onStartOver}
-            className="px-6 py-3 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+            variant="outline"
+            size="lg"
           >
             Start Over
-          </button>
+          </Button>
         </div>
 
         {/* Tips */}
@@ -145,6 +132,6 @@ function FeedbackView({ feedback, transcript, question, onNextQuestion, onStartO
       </div>
     </div>
   )
-}
+})
 
 export default FeedbackView 
