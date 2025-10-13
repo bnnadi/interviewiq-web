@@ -185,9 +185,9 @@ Manages speech processing including:
 - ✅ Accessibility features
 - ✅ Error handling and user feedback
 
-## Demo
+## Usage
 
-Visit `/demo/files-speech` to see the complete file and speech integration in action.
+The file components are integrated into the main application workflow and can be accessed through the practice sessions.
 
 ## Error Handling
 

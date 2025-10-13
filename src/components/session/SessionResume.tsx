@@ -21,6 +21,20 @@ const SessionResume: React.FC<SessionResumeProps> = ({
   const { incompleteSessions, resumeSession, refreshSessionHistory } = useSessionPersistence()
   const [isVisible, setIsVisible] = useState(false)
   const [isResuming, setIsResuming] = useState(false)
+  const [dismissedSessions, setDismissedSessions] = useState<Set<string>>(new Set())
+
+  // Load dismissed sessions from localStorage on mount
+  useEffect(() => {
+    const stored = localStorage.getItem('dismissedSessions')
+    if (stored) {
+      try {
+        const dismissedArray = JSON.parse(stored)
+        setDismissedSessions(new Set(dismissedArray))
+      } catch (error) {
+        console.warn('Failed to parse dismissed sessions:', error)
+      }
+    }
+  }, [])
 
   // Check for incomplete sessions on mount (only if authenticated)
   useEffect(() => {
@@ -29,12 +43,33 @@ const SessionResume: React.FC<SessionResumeProps> = ({
     }
   }, [refreshSessionHistory, isAuthenticated])
 
+  // Clean up dismissed sessions that are no longer incomplete
+  useEffect(() => {
+    if (incompleteSessions.length > 0) {
+      const incompleteSessionIds = new Set(incompleteSessions.map(s => s.id))
+      const newDismissedSessions = new Set([...dismissedSessions].filter(id => incompleteSessionIds.has(id)))
+      
+      if (newDismissedSessions.size !== dismissedSessions.size) {
+        setDismissedSessions(newDismissedSessions)
+        localStorage.setItem('dismissedSessions', JSON.stringify([...newDismissedSessions]))
+      }
+    } else if (dismissedSessions.size > 0) {
+      // If no incomplete sessions, clear all dismissed sessions
+      setDismissedSessions(new Set())
+      localStorage.removeItem('dismissedSessions')
+    }
+  }, [incompleteSessions, dismissedSessions])
+
   // Show resume dialog if there are incomplete sessions and autoShow is enabled (only if authenticated)
   useEffect(() => {
     if (isAuthenticated && autoShow && incompleteSessions.length > 0) {
-      setIsVisible(true)
+      const latestSession = incompleteSessions[0]
+      // Only show if the latest session hasn't been dismissed
+      if (latestSession && !dismissedSessions.has(latestSession.id)) {
+        setIsVisible(true)
+      }
     }
-  }, [incompleteSessions, autoShow, isAuthenticated])
+  }, [incompleteSessions, autoShow, isAuthenticated, dismissedSessions])
 
   const handleResumeSession = async (sessionId: string) => {
     setIsResuming(true)
@@ -52,11 +87,33 @@ const SessionResume: React.FC<SessionResumeProps> = ({
   }
 
   const handleDismiss = () => {
+    const latestSession = incompleteSessions[0]
+    if (latestSession) {
+      // Add session to dismissed set
+      const newDismissedSessions = new Set(dismissedSessions)
+      newDismissedSessions.add(latestSession.id)
+      setDismissedSessions(newDismissedSessions)
+      
+      // Save to localStorage
+      localStorage.setItem('dismissedSessions', JSON.stringify([...newDismissedSessions]))
+    }
+    
     setIsVisible(false)
     onDismiss?.()
   }
 
   const handleStartNew = () => {
+    const latestSession = incompleteSessions[0]
+    if (latestSession) {
+      // Add session to dismissed set
+      const newDismissedSessions = new Set(dismissedSessions)
+      newDismissedSessions.add(latestSession.id)
+      setDismissedSessions(newDismissedSessions)
+      
+      // Save to localStorage
+      localStorage.setItem('dismissedSessions', JSON.stringify([...newDismissedSessions]))
+    }
+    
     setIsVisible(false)
     onDismiss?.()
   }

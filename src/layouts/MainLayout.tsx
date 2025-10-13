@@ -193,12 +193,6 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                 </>
               )}
               
-              <Link
-                to="/demo"
-                className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Demo
-              </Link>
               
               {(isUser || isEnterprise) && (
                 <button

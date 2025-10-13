@@ -38,8 +38,6 @@ const EnterpriseSettings = lazy(() => import('@pages/enterprise/Settings'))
 
 // Other pages
 const NotFound = lazy(() => import('@pages/NotFound'))
-const ComponentsDemo = lazy(() => import('@pages/ComponentsDemo'))
-const FileAndSpeechDemo = lazy(() => import('@pages/FileAndSpeechDemo'))
 const SessionSimulation = lazy(() => import('@pages/SessionSimulation'))
 
 // Legacy pages for backward compatibility
@@ -218,9 +216,6 @@ const AppContent: React.FC = () => {
           </ProtectedRoute>
         } />
         
-        {/* Demo Routes - No protection needed */}
-        <Route path="/demo" element={<ComponentsDemo />} />
-        <Route path="/demo/files-speech" element={<FileAndSpeechDemo />} />
         
         {/* Legacy Routes for backward compatibility */}
         <Route path="/interview/new" element={

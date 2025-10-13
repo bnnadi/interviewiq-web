@@ -174,7 +174,6 @@ const PracticeIndex: React.FC = () => {
                 </span>
                 <Button
                   variant="outline"
-                  className="group-hover:bg-blue-50 group-hover:border-blue-300 transition-colors"
                   onClick={() => handleScenarioStart(scenario.id)}
                   disabled={loadingScenario === scenario.id}
                 >
