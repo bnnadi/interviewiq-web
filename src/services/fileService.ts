@@ -1,6 +1,7 @@
 import { API_CONFIG } from '../config/api'
 import { logger } from '../utils/logger'
 import { networkManager } from '../utils/networkUtils'
+import { authService } from './authService'
 import {
   FileType,
   FileUploadResponse,
@@ -342,11 +343,16 @@ export class FileService {
   }
 
   async downloadFile(fileId: string): Promise<Blob> {
+    const authHeader = this.getAuthToken()
+    const headers: Record<string, string> = {}
+    
+    if (authHeader) {
+      headers['Authorization'] = authHeader
+    }
+
     const response = await fetch(`${this.baseURL}${API_CONFIG.ENDPOINTS.files.download}/${fileId}/download`, {
       method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${this.getAuthToken()}`
-      }
+      headers
     })
 
     if (!response.ok) {
@@ -424,11 +430,9 @@ export class FileService {
     )
   }
 
-  // Helper method to get auth token (implement based on your auth system)
-  private getAuthToken(): string {
-    // This should be implemented based on your authentication system
-    // For now, return empty string - you'll need to integrate with your auth context
-    return ''
+  // Helper method to get auth token from auth service
+  private getAuthToken(): string | null {
+    return authService.getAuthHeader()
   }
 }
 

@@ -1,6 +1,7 @@
 import { API_CONFIG } from '../config/api'
 import { logger } from '../utils/logger'
 import { networkManager } from '../utils/networkUtils'
+import { authService } from './authService'
 
 interface ParseJobDescriptionRequest {
   role: string
@@ -91,9 +92,10 @@ export class ApiService {
       timeout?: number
       retries?: number
       retryDelay?: number
+      requireAuth?: boolean
     } = {}
   ): Promise<T> {
-    const { timeout = this.defaultTimeout, retries = 3, retryDelay = 1000 } = options
+    const { timeout = this.defaultTimeout, retries = 3, retryDelay = 1000, requireAuth = true } = options
     
     // Check network status before making request
     if (!networkManager.isOnline()) {
@@ -113,11 +115,22 @@ export class ApiService {
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), timeout)
 
+        // Prepare headers
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+        }
+
+        // Add authorization header if required
+        if (requireAuth) {
+          const authHeader = authService.getAuthHeader()
+          if (authHeader) {
+            headers['Authorization'] = authHeader
+          }
+        }
+
         const response = await fetch(`${this.baseURL}${endpoint}`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers,
           body: JSON.stringify(data),
           signal: controller.signal
         })
@@ -126,6 +139,25 @@ export class ApiService {
 
         if (!response.ok) {
           const errorText = await response.text()
+          
+          // Handle 401 Unauthorized - try to refresh token
+          if (response.status === 401 && requireAuth && attempt === 0) {
+            try {
+              await authService.refreshAccessToken()
+              // Retry the request with new token
+              continue
+            } catch (refreshError) {
+              // Refresh failed, user needs to login again
+              lastError = this.createApiError(
+                'Session expired. Please log in again.',
+                new Error('Authentication failed'),
+                401,
+                false
+              )
+              throw lastError
+            }
+          }
+
           lastError = this.createApiError(
             `HTTP ${response.status}: ${errorText || response.statusText}`,
             new Error(errorText || response.statusText),

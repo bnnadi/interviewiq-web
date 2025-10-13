@@ -2,6 +2,17 @@
 export const API_CONFIG = {
   BASE_URL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
   ENDPOINTS: {
+    // Authentication
+    auth: {
+      login: '/api/v1/auth/login',
+      refresh: '/api/v1/auth/refresh',
+      logout: '/api/v1/auth/logout',
+      me: '/api/v1/auth/me',
+      register: '/api/v1/auth/register',
+      forgotPassword: '/api/v1/auth/forgot-password',
+      resetPassword: '/api/v1/auth/reset-password'
+    },
+    // Core Services
     parseJD: '/api/v1/parse-jd',
     analyzeAnswer: '/api/v1/analyze-answer',
     services: '/api/v1/services',
@@ -31,6 +42,15 @@ export const API_CONFIG = {
 } as const
 
 export interface ApiEndpoints {
+  auth: {
+    login: string
+    refresh: string
+    logout: string
+    me: string
+    register: string
+    forgotPassword: string
+    resetPassword: string
+  }
   parseJD: string
   analyzeAnswer: string
   services: string
