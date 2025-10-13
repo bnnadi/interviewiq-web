@@ -27,7 +27,7 @@ interface AppContextType {
   hasUnsavedChanges: boolean
   
   // Actions
-  handleJobSubmit: (jd: string, role: string) => Promise<void>
+  handleJobSubmit: (jd: string, role: string, company?: string) => Promise<void>
   handleQuestionSelect: (question: string) => void
   handleTranscriptComplete: (transcript: string) => Promise<void>
   handleStartOver: () => void
@@ -116,7 +116,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     navigate('/dashboard')
   }, [navigate])
 
-  const handleJobSubmit = useCallback(async (jd: string, role: string) => {
+  const handleJobSubmit = useCallback(async (jd: string, role: string, company?: string) => {
     setLoading(true)
     setError(null)
     

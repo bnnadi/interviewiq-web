@@ -11,6 +11,14 @@ export interface SessionData {
   startTime: Date
   lastSaved: Date
   status: 'in_progress' | 'completed' | 'abandoned'
+  // Session mode and context
+  mode: 'practice' | 'interview'
+  scenarioId?: string // For practice scenarios
+  jobContext?: {
+    jobTitle: string
+    jobDescription: string
+    company?: string
+  }
   // Optional fields for future enhancements
   audioData?: string // Base64 encoded audio if needed
   intermediateScores?: number[]

@@ -16,6 +16,13 @@ export const API_CONFIG = {
     parseJD: '/api/v1/parse-jd',
     analyzeAnswer: '/api/v1/analyze-answer',
     services: '/api/v1/services',
+    // Session Management
+    sessions: {
+      start: '/api/v1/sessions/start',
+      get: '/api/v1/sessions',
+      update: '/api/v1/sessions',
+      complete: '/api/v1/sessions/complete'
+    },
     // File Operations
     files: {
       upload: '/api/v1/files/upload',
@@ -54,6 +61,12 @@ export interface ApiEndpoints {
   parseJD: string
   analyzeAnswer: string
   services: string
+  sessions: {
+    start: string
+    get: string
+    update: string
+    complete: string
+  }
   files: {
     upload: string
     get: string

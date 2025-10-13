@@ -40,6 +40,7 @@ const EnterpriseSettings = lazy(() => import('@pages/enterprise/Settings'))
 const NotFound = lazy(() => import('@pages/NotFound'))
 const ComponentsDemo = lazy(() => import('@pages/ComponentsDemo'))
 const FileAndSpeechDemo = lazy(() => import('@pages/FileAndSpeechDemo'))
+const SessionSimulation = lazy(() => import('@pages/SessionSimulation'))
 
 // Legacy pages for backward compatibility
 const JobInputPage = lazy(() => import('@pages/JobInputPage'))
@@ -204,6 +205,15 @@ const AppContent: React.FC = () => {
           <ProtectedRoute requiredRole="enterprise">
             <MainLayout>
               <EnterpriseSettings />
+            </MainLayout>
+          </ProtectedRoute>
+        } />
+        
+        {/* Session Routes - Protected */}
+        <Route path="/session/:sessionId" element={
+          <ProtectedRoute requiredRole="user">
+            <MainLayout>
+              <SessionSimulation />
             </MainLayout>
           </ProtectedRoute>
         } />

@@ -14,6 +14,16 @@ interface AnalyzeAnswerRequest {
   answer: string
 }
 
+interface StartSessionRequest {
+  mode: 'practice' | 'interview'
+  scenarioId?: string
+  jobContext?: {
+    jobTitle: string
+    jobDescription: string
+    company?: string
+  }
+}
+
 export interface ApiError extends Error {
   status?: number
   code?: string
@@ -249,6 +259,56 @@ export class ApiService {
       API_CONFIG.ENDPOINTS.analyzeAnswer, 
       { jobDescription, question, answer } as AnalyzeAnswerRequest, 
       'analyze answer',
+      options
+    )
+  }
+
+  // Session management methods
+  async startSession(
+    request: StartSessionRequest,
+    options?: { timeout?: number; retries?: number }
+  ): Promise<{ sessionId: string; questions: string[]; sessionData: any }> {
+    return this.makeRequest<{ sessionId: string; questions: string[]; sessionData: any }>(
+      API_CONFIG.ENDPOINTS.sessions.start,
+      request,
+      'start session',
+      options
+    )
+  }
+
+  async getSession(
+    sessionId: string,
+    options?: { timeout?: number; retries?: number }
+  ): Promise<any> {
+    return this.makeRequest<any>(
+      `${API_CONFIG.ENDPOINTS.sessions.get}/${sessionId}`,
+      {},
+      'get session',
+      options
+    )
+  }
+
+  async updateSession(
+    sessionId: string,
+    updates: any,
+    options?: { timeout?: number; retries?: number }
+  ): Promise<any> {
+    return this.makeRequest<any>(
+      `${API_CONFIG.ENDPOINTS.sessions.update}/${sessionId}`,
+      updates,
+      'update session',
+      options
+    )
+  }
+
+  async completeSession(
+    sessionId: string,
+    options?: { timeout?: number; retries?: number }
+  ): Promise<any> {
+    return this.makeRequest<any>(
+      `${API_CONFIG.ENDPOINTS.sessions.complete}/${sessionId}`,
+      {},
+      'complete session',
       options
     )
   }

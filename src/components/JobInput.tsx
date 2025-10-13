@@ -2,12 +2,13 @@ import React, { useState } from 'react'
 import { validateJobInput } from '../utils/validation'
 
 interface JobInputProps {
-  onSubmit: (jd: string, role: string) => Promise<void>
+  onSubmit: (data: { jobDescription: string; role: string; company?: string }) => Promise<void>
 }
 
 const JobInput = React.memo<JobInputProps>(function JobInput({ onSubmit }) {
   const [jd, setJd] = useState<string>('')
   const [role, setRole] = useState<string>('')
+  const [company, setCompany] = useState<string>('')
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false)
   const [validationError, setValidationError] = useState<string>('')
 
@@ -22,16 +23,23 @@ const JobInput = React.memo<JobInputProps>(function JobInput({ onSubmit }) {
 
     setValidationError('')
     setIsSubmitting(true)
-    await onSubmit(jd.trim(), role.trim())
+    await onSubmit({
+      jobDescription: jd.trim(),
+      role: role.trim(),
+      ...(company.trim() && { company: company.trim() })
+    })
     setIsSubmitting(false)
   }
 
   return (
-    <div className="max-w-2xl mx-auto">
+    <div className="max-w-2xl mx-auto mb-8">
       <div className="bg-white rounded-lg shadow-md p-8">
-        <h2 className="text-2xl font-semibold text-gray-900 mb-6">
-          Enter Job Details
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">
+          Generate Personalized Questions
         </h2>
+        <p className="text-gray-600 mb-6">
+          Enter your job details to get tailored interview questions.
+        </p>
         
         {validationError && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
@@ -42,7 +50,7 @@ const JobInput = React.memo<JobInputProps>(function JobInput({ onSubmit }) {
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
             <label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-2">
-              Role Title *
+              Job Title *
             </label>
             <input
               type="text"
@@ -53,6 +61,23 @@ const JobInput = React.memo<JobInputProps>(function JobInput({ onSubmit }) {
               className="w-full px-4 py-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
               required
             />
+          </div>
+
+          <div>
+            <label htmlFor="company" className="block text-sm font-medium text-gray-700 mb-2">
+              Company (Optional)
+            </label>
+            <input
+              type="text"
+              id="company"
+              value={company}
+              onChange={(e) => setCompany(e.target.value)}
+              placeholder="e.g., Google, Microsoft, Startup Inc."
+              className="w-full px-4 py-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+            />
+            <p className="mt-1 text-sm text-gray-500">
+              Include company name for job-specific interview questions
+            </p>
           </div>
 
           <div>
@@ -83,7 +108,7 @@ const JobInput = React.memo<JobInputProps>(function JobInput({ onSubmit }) {
         </form>
 
         <div className="mt-6 p-4 bg-blue-50 rounded-md">
-          <h3 className="text-sm font-medium text-blue-900 mb-2">💡 Tip</h3>
+          <h3 className="text-sm font-medium text-blue-900 mb-2">Tip</h3>
           <p className="text-sm text-blue-800">
             Include the full job description with requirements, responsibilities, and preferred qualifications 
             for the most relevant interview questions.
