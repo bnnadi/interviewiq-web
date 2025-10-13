@@ -15,17 +15,10 @@ export interface LoginRequest {
 }
 
 export interface LoginResponse {
-  user: {
-    id: string
-    email: string
-    name: string
-    role: 'user' | 'enterprise'
-    organization?: string
-    avatar?: string
-  }
-  accessToken: string
-  refreshToken: string
-  expiresIn: number
+  access_token: string
+  refresh_token: string
+  token_type: string
+  expires_in: number
 }
 
 export interface RefreshResponse {
@@ -63,12 +56,15 @@ export class AuthService {
       
       // Store tokens securely
       this.storeTokens({
-        accessToken: data.accessToken,
-        refreshToken: data.refreshToken,
-        expiresAt: Date.now() + (data.expiresIn * 1000)
+        accessToken: data.access_token,
+        refreshToken: data.refresh_token,
+        expiresAt: Date.now() + (data.expires_in * 1000)
       })
 
-      logger.info('User logged in successfully:', data.user.email)
+      // Decode user info from JWT for logging
+      const user = this.decodeJWTUser(data.access_token)
+      logger.info('User logged in successfully:', user.email)
+      
       return data
     } catch (error) {
       logger.error('Login failed:', error)
@@ -163,7 +159,14 @@ export class AuthService {
   /**
    * Get current user info from stored token
    */
-  async getCurrentUser(): Promise<LoginResponse['user'] | null> {
+  async getCurrentUser(): Promise<{
+    id: string
+    email: string
+    name: string
+    role: 'user' | 'enterprise'
+    organization?: string
+    avatar?: string
+  } | null> {
     try {
       const accessToken = this.getStoredAccessToken()
       
@@ -171,29 +174,8 @@ export class AuthService {
         return null
       }
 
-      const response = await fetch(`${this.baseURL}${API_CONFIG.ENDPOINTS.auth.me}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        }
-      })
-
-      if (!response.ok) {
-        if (response.status === 401) {
-          // Token is invalid, try to refresh
-          try {
-            await this.refreshAccessToken()
-            // Retry the request with new token
-            return this.getCurrentUser()
-          } catch {
-            return null
-          }
-        }
-        throw new Error(`Failed to get user info: ${response.statusText}`)
-      }
-
-      const user = await response.json()
-      return user
+      // Decode user info from the stored JWT token
+      return this.decodeJWTUser(accessToken)
     } catch (error) {
       logger.error('Failed to get current user:', error)
       return null
@@ -297,6 +279,55 @@ export class AuthService {
       logger.info('All tokens cleared')
     } catch (error) {
       logger.error('Failed to clear tokens:', error)
+    }
+  }
+
+  /**
+   * Decode JWT token to extract user information
+   */
+  decodeJWTUser(token: string): {
+    id: string
+    email: string
+    name: string
+    role: 'user' | 'enterprise'
+    organization?: string
+    avatar?: string
+  } {
+    try {
+      // JWT tokens have 3 parts separated by dots: header.payload.signature
+      const parts = token.split('.')
+      if (parts.length !== 3) {
+        throw new Error('Invalid JWT token format')
+      }
+
+      // Decode the payload (second part)
+      const payload = parts[1]
+      if (!payload) {
+        throw new Error('Invalid JWT token: missing payload')
+      }
+      // Add padding if needed for base64 decoding
+      const paddedPayload = payload + '='.repeat((4 - payload.length % 4) % 4)
+      const decodedPayload = atob(paddedPayload)
+      const userData = JSON.parse(decodedPayload)
+
+      // Extract user information from JWT payload
+      return {
+        id: userData.sub || userData.user_id || '',
+        email: userData.email || '',
+        name: userData.name || userData.email?.split('@')[0] || 'User',
+        role: userData.role || 'user',
+        organization: userData.organization,
+        avatar: userData.avatar
+      }
+    } catch (error) {
+      logger.error('Failed to decode JWT token:', error)
+      // Return a fallback user object
+      return {
+        id: 'unknown',
+        email: 'unknown@example.com',
+        name: 'User',
+        role: 'user'
+      }
     }
   }
 

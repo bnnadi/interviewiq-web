@@ -58,7 +58,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
       
       const response = await authService.login(loginData)
-      setUser(response.user)
+      // Decode user info from JWT token
+      const user = authService.decodeJWTUser(response.access_token)
+      setUser(user)
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Login failed. Please check your credentials.'
       throw new Error(errorMessage)
