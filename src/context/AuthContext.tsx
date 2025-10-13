@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react'
+import { authService, LoginRequest } from '../services/authService'
 
 export type UserRole = 'user' | 'enterprise' | null
 
@@ -18,9 +19,10 @@ interface AuthContextType {
   isLoading: boolean
   
   // Actions
-  login: (email: string, password: string, role: UserRole) => Promise<void>
-  logout: () => void
-  checkAuth: () => void
+  login: (email: string, password: string, role: UserRole, organization?: string) => Promise<void>
+  logout: () => Promise<void>
+  checkAuth: () => Promise<void>
+  refreshAuth: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -43,49 +45,80 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const isAuthenticated = !!user
 
-  // Mock authentication - in real app, this would call your API
-  const login = useCallback(async (email: string, _password: string, role: UserRole) => {
+  // Real JWT authentication implementation
+  const login = useCallback(async (email: string, password: string, role: UserRole, organization?: string) => {
     setIsLoading(true)
     
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      
-      // Mock user data based on role
-      const mockUser: User = {
-        id: '1',
+      const loginData: LoginRequest = {
         email,
-        name: role === 'enterprise' ? 'Enterprise Admin' : 'John Doe',
-        role,
-        organization: role === 'enterprise' ? 'Acme Corp' : undefined,
-        avatar: undefined
+        password,
+        role: role!,
+        ...(organization && { organization })
       }
       
-      setUser(mockUser)
-      localStorage.setItem('user', JSON.stringify(mockUser))
+      const response = await authService.login(loginData)
+      // Decode user info from JWT token
+      const user = authService.decodeJWTUser(response.access_token)
+      setUser(user)
     } catch (error) {
-      throw new Error('Login failed. Please check your credentials.')
+      const errorMessage = error instanceof Error ? error.message : 'Login failed. Please check your credentials.'
+      throw new Error(errorMessage)
     } finally {
       setIsLoading(false)
     }
   }, [])
 
-  const logout = useCallback(() => {
-    setUser(null)
-    localStorage.removeItem('user')
+  const logout = useCallback(async () => {
+    setIsLoading(true)
+    
+    try {
+      await authService.logout()
+    } catch (error) {
+      console.error('Logout error:', error)
+    } finally {
+      setUser(null)
+      setIsLoading(false)
+    }
   }, [])
 
-  const checkAuth = useCallback(() => {
-    const storedUser = localStorage.getItem('user')
-    if (storedUser) {
-      try {
-        const userData = JSON.parse(storedUser)
-        setUser(userData)
-      } catch (error) {
-        localStorage.removeItem('user')
+  const checkAuth = useCallback(async () => {
+    setIsLoading(true)
+    
+    try {
+      // Check if we have valid tokens
+      if (!authService.isAuthenticated()) {
+        setUser(null)
+        return
       }
+
+      // Try to get current user from API
+      const currentUser = await authService.getCurrentUser()
+      if (currentUser) {
+        setUser(currentUser)
+      } else {
+        setUser(null)
+      }
+    } catch (error) {
+      console.error('Auth check failed:', error)
+      setUser(null)
+    } finally {
+      setIsLoading(false)
     }
-    setIsLoading(false)
+  }, [])
+
+  const refreshAuth = useCallback(async () => {
+    try {
+      if (authService.isAuthenticated()) {
+        const currentUser = await authService.getCurrentUser()
+        if (currentUser) {
+          setUser(currentUser)
+        }
+      }
+    } catch (error) {
+      console.error('Auth refresh failed:', error)
+      setUser(null)
+    }
   }, [])
 
   // Check authentication on mount
@@ -99,7 +132,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     isLoading,
     login,
     logout,
-    checkAuth
+    checkAuth,
+    refreshAuth
   }
 
   return (

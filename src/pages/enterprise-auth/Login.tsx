@@ -29,7 +29,7 @@ const EnterpriseLogin: React.FC = () => {
     setError('')
 
     try {
-      await login(formData.email, formData.password, 'enterprise')
+      await login(formData.email, formData.password, 'enterprise', formData.organization)
       navigate('/enterprise/dashboard')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Enterprise login failed')

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useSessionPersistence } from '../../hooks/useSessionPersistence'
+import { useAuth } from '../../context/AuthContext'
 import Button from '../shared/ui/Button'
 import { Card } from '../ui/Card'
 import { Badge } from '../ui/Badge'
@@ -16,21 +17,24 @@ const SessionResume: React.FC<SessionResumeProps> = ({
   onDismiss,
   autoShow = true
 }) => {
+  const { isAuthenticated } = useAuth()
   const { incompleteSessions, resumeSession, refreshSessionHistory } = useSessionPersistence()
   const [isVisible, setIsVisible] = useState(false)
   const [isResuming, setIsResuming] = useState(false)
 
-  // Check for incomplete sessions on mount
+  // Check for incomplete sessions on mount (only if authenticated)
   useEffect(() => {
-    refreshSessionHistory()
-  }, [refreshSessionHistory])
+    if (isAuthenticated) {
+      refreshSessionHistory()
+    }
+  }, [refreshSessionHistory, isAuthenticated])
 
-  // Show resume dialog if there are incomplete sessions and autoShow is enabled
+  // Show resume dialog if there are incomplete sessions and autoShow is enabled (only if authenticated)
   useEffect(() => {
-    if (autoShow && incompleteSessions.length > 0) {
+    if (isAuthenticated && autoShow && incompleteSessions.length > 0) {
       setIsVisible(true)
     }
-  }, [incompleteSessions, autoShow])
+  }, [incompleteSessions, autoShow, isAuthenticated])
 
   const handleResumeSession = async (sessionId: string) => {
     setIsResuming(true)
@@ -57,7 +61,8 @@ const SessionResume: React.FC<SessionResumeProps> = ({
     onDismiss?.()
   }
 
-  if (!isVisible || incompleteSessions.length === 0) {
+  // Don't show modal if user is not authenticated
+  if (!isAuthenticated || !isVisible || incompleteSessions.length === 0) {
     return null
   }
 

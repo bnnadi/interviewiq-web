@@ -1,6 +1,7 @@
 import { API_CONFIG } from '../config/api'
 import { logger } from '../utils/logger'
 import { networkManager } from '../utils/networkUtils'
+import { authService } from './authService'
 import {
   TranscriptionResponse,
   TranscriptionRequest,
@@ -322,11 +323,9 @@ export class SpeechService {
     return 'Very Low'
   }
 
-  // Helper method to get auth token (implement based on your auth system)
-  private getAuthToken(): string {
-    // This should be implemented based on your authentication system
-    // For now, return empty string - you'll need to integrate with your auth context
-    return ''
+  // Helper method to get auth token from auth service
+  private getAuthToken(): string | null {
+    return authService.getAuthHeader()
   }
 }
 

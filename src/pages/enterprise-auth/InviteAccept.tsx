@@ -48,7 +48,7 @@ const InviteAccept: React.FC = () => {
     try {
       // In a real app, you would validate the invite token and create the account
       await new Promise(resolve => setTimeout(resolve, 1000))
-      await login(formData.email, formData.password, 'enterprise')
+      await login(formData.email, formData.password, 'enterprise', organization)
       navigate('/enterprise/dashboard')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Account setup failed')
