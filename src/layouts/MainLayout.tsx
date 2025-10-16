@@ -58,9 +58,9 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
               <Link 
                 to={isEnterprise ? "/enterprise/dashboard" : "/dashboard"} 
                 className="text-2xl font-bold text-gray-900 hover:text-blue-600 transition-colors"
-                aria-label="InterviewIQ home page"
+                aria-label="Confida home page"
               >
-                InterviewIQ
+                Confida
                 {isEnterprise && <span className="text-sm text-blue-600 ml-2">Enterprise</span>}
               </Link>
             </div>

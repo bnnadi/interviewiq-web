@@ -1,7 +1,7 @@
-# InterviewIQ Frontend Updates - Implementation Summary
+# Confida Frontend Updates - Implementation Summary
 
 ## Overview
-Successfully implemented dual simulation modes for InterviewIQ frontend:
+Successfully implemented dual simulation modes for Confida frontend:
 - **Practice Scenario simulation** (existing scenarios)
 - **Job-Based Interview simulation** (new feature)
 

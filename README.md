@@ -1,13 +1,13 @@
-# InterviewIQ Web App
+# Confida Web App
 
-AI-powered interview coaching web application with voice recording and intelligent feedback.
+AI-powered confidence and interview coaching web application with voice recording and intelligent feedback.
 
 ## Features
 
 ### 🎯 **JD-Aware Question Generation**
 - Paste job descriptions to get personalized interview questions
 - AI analyzes JD requirements and generates relevant questions
-- Questions tailored to specific roles and responsibilities
+- Questions tailored to specific roles and responsibilities for confidence-building interview preparation
 
 ### 🎤 **Voice Recording & Transcription**
 - Real-time speech-to-text using browser SpeechRecognition API
@@ -17,8 +17,8 @@ AI-powered interview coaching web application with voice recording and intellige
 ### 🤖 **AI-Powered Feedback**
 - Comprehensive answer analysis with scoring (1-10)
 - Identifies missing keywords from job description
-- Provides specific improvement suggestions
-- Shows ideal answer examples
+- Provides specific improvement suggestions for clarity and confidence
+- Shows ideal answer examples to guide your growth
 
 ### 📱 **Modern UI/UX**
 - Clean, responsive design with Tailwind CSS
@@ -37,7 +37,7 @@ AI-powered interview coaching web application with voice recording and intellige
 ## Project Structure
 
 ```
-interview-coach-web/
+confida-web/
 ├── src/
 │   ├── components/
 │   │   ├── JobInput.jsx          # JD input form
@@ -64,7 +64,7 @@ interview-coach-web/
 1. **Clone the repository**
    ```bash
    git clone <repository-url>
-   cd interview-coach-web
+   cd confida-web
    ```
 
 2. **Install dependencies**

@@ -153,7 +153,7 @@ const FeedbackModal: React.FC<FeedbackModalProps> = ({
         category: 'Confidence & Presence',
         score: 76,
         maxScore: 100,
-        description: 'Overall confidence and professional presence',
+        description: 'Overall confidence, clarity, and professional presence',
         criteria: [
           {
             label: 'Self-Assurance',

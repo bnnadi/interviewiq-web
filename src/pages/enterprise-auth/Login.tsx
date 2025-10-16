@@ -41,7 +41,7 @@ const EnterpriseLogin: React.FC = () => {
   return (
     <EnterpriseAuthLayout 
       title="Enterprise Login" 
-      subtitle="Access your organization's InterviewIQ dashboard"
+      subtitle="Access your organization's Confida dashboard"
     >
       <form onSubmit={handleSubmit} className="space-y-6">
         {error && (

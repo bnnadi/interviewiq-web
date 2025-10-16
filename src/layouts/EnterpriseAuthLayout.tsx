@@ -26,7 +26,7 @@ const EnterpriseAuthLayout: React.FC<EnterpriseAuthLayoutProps> = ({ children, t
                 <span className="text-2xl font-bold text-indigo-600">IQ</span>
               </div>
               <div className="ml-3 text-left">
-                <h1 className="text-2xl font-bold text-white">InterviewIQ</h1>
+                <h1 className="text-2xl font-bold text-white">Confida</h1>
                 <p className="text-sm text-blue-200">Enterprise</p>
               </div>
             </div>
@@ -77,7 +77,7 @@ const EnterpriseAuthLayout: React.FC<EnterpriseAuthLayoutProps> = ({ children, t
           </div>
           
           <div className="mt-4 text-xs text-blue-300">
-            <p>Powered by InterviewIQ Enterprise Platform</p>
+            <p>Powered by Confida Enterprise Platform</p>
             <p className="mt-1">Trusted by Fortune 500 companies worldwide</p>
           </div>
         </div>

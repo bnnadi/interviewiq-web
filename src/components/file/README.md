@@ -1,6 +1,6 @@
 # File Operations & Speech Integration
 
-This directory contains comprehensive file operations and speech integration components for the InterviewIQ application.
+This directory contains comprehensive file operations and speech integration components for the Confida application.
 
 ## Overview
 

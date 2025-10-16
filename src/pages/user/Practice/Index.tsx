@@ -197,7 +197,7 @@ const PracticeIndex: React.FC = () => {
       {/* Pro Tip */}
       <div className="bg-gray-50 p-4 rounded-lg text-sm">
         <p className="text-gray-700">
-          Start with easier scenarios to build confidence, then move on to more challenging ones.
+          Start with easier scenarios to build confidence and clarity, then move on to more challenging ones for continued growth.
         </p>
       </div>
     </div>

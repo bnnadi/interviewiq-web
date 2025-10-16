@@ -42,11 +42,11 @@ const DataExport: React.FC<DataExportProps> = ({
       switch (selectedType) {
         case 'sessions':
           data = sessionHistory
-          filename = `interviewiq-sessions-${new Date().toISOString().split('T')[0]}`
+          filename = `confida-sessions-${new Date().toISOString().split('T')[0]}`
           break
         case 'profile':
           data = userData
-          filename = `interviewiq-profile-${new Date().toISOString().split('T')[0]}`
+          filename = `confida-profile-${new Date().toISOString().split('T')[0]}`
           break
         case 'all':
           data = {
@@ -55,7 +55,7 @@ const DataExport: React.FC<DataExportProps> = ({
             exportDate: new Date().toISOString(),
             version: '1.0'
           }
-          filename = `interviewiq-data-${new Date().toISOString().split('T')[0]}`
+          filename = `confida-data-${new Date().toISOString().split('T')[0]}`
           break
         default:
           throw new Error('Invalid export type')
@@ -141,7 +141,7 @@ const DataExport: React.FC<DataExportProps> = ({
   }
 
   const createPDFContent = (data: any, type: ExportType): string => {
-    let content = `InterviewIQ Data Export\n`
+    let content = `Confida Data Export\n`
     content += `Generated: ${new Date().toLocaleString()}\n`
     content += `Type: ${type}\n\n`
     

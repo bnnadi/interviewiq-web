@@ -53,7 +53,7 @@ const FeedbackView = React.memo<FeedbackViewProps>(function FeedbackView({ feedb
                 Overall Score
               </h3>
               <p className="text-gray-600">
-                Based on clarity, relevance, and alignment with job requirements
+                Based on clarity, relevance, and alignment with job requirements to build your confidence
               </p>
             </div>
             <div className="text-center">
@@ -124,8 +124,8 @@ const FeedbackView = React.memo<FeedbackViewProps>(function FeedbackView({ feedb
           <h3 className="text-sm font-medium text-purple-900 mb-2">💡 Next Steps</h3>
           <ul className="text-sm text-purple-800 space-y-1">
             <li>• Practice the same question again with the feedback in mind</li>
-            <li>• Try other questions to build confidence</li>
-            <li>• Focus on incorporating missing keywords naturally</li>
+            <li>• Try other questions to build confidence and clarity</li>
+            <li>• Focus on incorporating missing keywords naturally for growth</li>
             <li>• Use the STAR method consistently</li>
           </ul>
         </div>

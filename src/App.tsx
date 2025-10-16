@@ -51,7 +51,7 @@ const GlobalLoadingScreen: React.FC = () => {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="text-center">
-        <LoadingSpinner message="Loading InterviewIQ..." />
+        <LoadingSpinner message="Loading Confida..." />
         <p className="mt-4 text-gray-600">Initializing your experience...</p>
       </div>
     </div>

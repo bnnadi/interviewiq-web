@@ -16,7 +16,7 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({ children, title, subtitle, isSi
         <div className="flex flex-col justify-center px-12 py-16 text-white relative z-10">
           {/* Logo */}
           <Link to="/" className="mb-8">
-            <h1 className="text-4xl font-bold text-white">InterviewIQ</h1>
+            <h1 className="text-4xl font-bold text-white">Confida</h1>
           </Link>
           
           {/* Welcome Text */}
@@ -60,7 +60,7 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({ children, title, subtitle, isSi
           {/* Mobile Logo */}
           <div className="lg:hidden mb-8 text-center">
             <Link to="/" className="inline-block">
-              <h1 className="text-3xl font-bold text-gray-900">InterviewIQ</h1>
+              <h1 className="text-3xl font-bold text-gray-900">Confida</h1>
             </Link>
           </div>
 

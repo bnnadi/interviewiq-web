@@ -44,7 +44,7 @@ class SessionEventManager implements SessionEventEmitter {
 
 // IndexedDB-based session storage implementation
 export class IndexedDBSessionStorage implements SessionStorageService {
-  private dbName = 'InterviewIQ_Sessions'
+  private dbName = 'Confida_Sessions'
   private dbVersion = 1
   private storeName = 'sessions'
   private db: IDBDatabase | null = null
@@ -259,7 +259,7 @@ export class IndexedDBSessionStorage implements SessionStorageService {
         const keysToRemove = []
         for (let i = 0; i < localStorage.length; i++) {
           const key = localStorage.key(i)
-          if (key && key.startsWith('InterviewIQ_')) {
+          if (key && key.startsWith('Confida_')) {
             keysToRemove.push(key)
           }
         }

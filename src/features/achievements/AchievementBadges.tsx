@@ -69,7 +69,7 @@ const AchievementBadges: React.FC<AchievementBadgesProps> = ({
     {
       id: 'confidence-boost',
       title: 'Confidence Booster',
-      description: 'Achieve 90%+ confidence score in 3 interviews',
+      description: 'Achieve 90%+ confidence and clarity score in 3 interviews',
       icon: '💪',
       category: 'performance',
       rarity: 'epic',

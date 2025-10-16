@@ -56,7 +56,7 @@ const EnterpriseSettings: React.FC = () => {
           Enterprise Settings
         </h1>
         <p className="text-gray-600 text-lg">
-          Manage your organization's InterviewIQ configuration
+          Manage your organization's Confida configuration
         </p>
       </div>
 

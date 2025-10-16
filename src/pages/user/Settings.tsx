@@ -49,7 +49,7 @@ const Settings: React.FC = () => {
           Settings
         </h1>
         <p className="text-gray-600 text-lg">
-          Customize your InterviewIQ experience
+          Customize your Confida experience
         </p>
       </div>
 

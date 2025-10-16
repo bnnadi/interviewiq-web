@@ -120,7 +120,7 @@ const FollowUpSuggestions: React.FC<FollowUpSuggestionsProps> = ({
       score: 55,
       maxScore: 100,
       priority: 'medium',
-      description: 'Work on projecting confidence through voice tone and body language.',
+      description: 'Work on projecting confidence and clarity through voice tone and body language.',
       suggestions: [
         {
           id: 'conf-1',
