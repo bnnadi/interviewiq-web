@@ -111,119 +111,120 @@ export class ApiService {
 
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        // Create abort controller for timeout
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), timeout)
-
-        // Prepare headers
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-        }
-
-        // Add authorization header if required
-        if (requireAuth) {
-          const authHeader = authService.getAuthHeader()
-          if (authHeader) {
-            headers['Authorization'] = authHeader
-          }
-        }
-
-        const response = await fetch(`${this.baseURL}${endpoint}`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(data),
-          signal: controller.signal
-        })
-
-        clearTimeout(timeoutId)
-
-        if (!response.ok) {
-          const errorText = await response.text()
-          
-          // Handle 401 Unauthorized - try to refresh token
-          if (response.status === 401 && requireAuth && attempt === 0) {
-            try {
-              await authService.refreshAccessToken()
-              // Retry the request with new token
-              continue
-            } catch (refreshError) {
-              // Refresh failed, user needs to login again
-              lastError = this.createApiError(
-                'Session expired. Please log in again.',
-                new Error('Authentication failed'),
-                401,
-                false
-              )
-              throw lastError
-            }
-          }
-
-          lastError = this.createApiError(
-            `HTTP ${response.status}: ${errorText || response.statusText}`,
-            new Error(errorText || response.statusText),
-            response.status,
-            response.status >= 500 || response.status === 429 // Retry on server errors and rate limits
-          )
-          
-          // Don't retry on client errors (4xx except 429)
-          if (response.status >= 400 && response.status < 500 && response.status !== 429) {
-            throw lastError
-          }
-          
-          // If this is the last attempt, throw the error
-          if (attempt >= retries) {
-            throw lastError
-          }
-          
-          // Wait before retrying
-          await new Promise(resolve => setTimeout(resolve, retryDelay * Math.pow(2, attempt)))
-          continue
-        }
-
-        return await response.json()
+        const result = await this.executeRequest(endpoint, data, timeout, requireAuth)
+        return result
       } catch (error) {
-        lastError = error instanceof Error ? error : new Error('Unknown error')
+        lastError = this.handleRequestError(error, attempt, retries, retryDelay, requireAuth)
         
-        // Handle abort (timeout)
-        if (lastError.name === 'AbortError') {
-          lastError = this.createApiError(
-            'Request timeout',
-            lastError,
-            undefined,
-            true
-          )
-        }
-        
-        // Handle network errors
-        if (lastError.name === 'TypeError' && lastError.message.includes('fetch')) {
-          lastError = this.createApiError(
-            'Network error: Unable to connect to server',
-            lastError,
-            undefined,
-            true
-          )
-        }
-
-        // Don't retry on non-retryable errors
-        if (lastError instanceof Error && 'retryable' in lastError && !lastError.retryable) {
+        // If error is not retryable or this is the last attempt, throw it
+        if (!this.shouldRetry(lastError, attempt, retries)) {
           throw lastError
         }
-
-        // If this is the last attempt, throw the error
-        if (attempt >= retries) {
-          throw lastError
-        }
-
-        // Log retry attempt
-        logger.warn(`API request failed (attempt ${attempt + 1}/${retries + 1}):`, lastError)
         
         // Wait before retrying with exponential backoff
-        await new Promise(resolve => setTimeout(resolve, retryDelay * Math.pow(2, attempt)))
+        await this.waitForRetry(attempt, retryDelay)
       }
     }
 
-    // This should never be reached, but TypeScript needs it
     throw lastError || new Error('Request failed after all retries')
+  }
+
+  private async executeRequest<T>(
+    endpoint: string,
+    data: unknown,
+    timeout: number,
+    requireAuth: boolean
+  ): Promise<T> {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), timeout)
+
+    try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      }
+
+      if (requireAuth) {
+        const authHeader = authService.getAuthHeader()
+        if (authHeader) {
+          headers['Authorization'] = authHeader
+        }
+      }
+
+      const response = await fetch(`${this.baseURL}${endpoint}`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(data),
+        signal: controller.signal
+      })
+
+      clearTimeout(timeoutId)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw this.createApiError(
+          `HTTP ${response.status}: ${errorText || response.statusText}`,
+          new Error(errorText || response.statusText),
+          response.status,
+          response.status >= 500 || response.status === 429
+        )
+      }
+
+      return await response.json()
+    } finally {
+      clearTimeout(timeoutId)
+    }
+  }
+
+  private handleRequestError(
+    error: any,
+    attempt: number,
+    retries: number,
+    retryDelay: number,
+    requireAuth: boolean
+  ): Error {
+    let lastError = error instanceof Error ? error : new Error('Unknown error')
+    
+    // Handle specific error types
+    if (lastError.name === 'AbortError') {
+      lastError = this.createApiError('Request timeout', lastError, undefined, true)
+    } else if (lastError.name === 'TypeError' && lastError.message.includes('fetch')) {
+      lastError = this.createApiError('Network error: Unable to connect to server', lastError, undefined, true)
+    } else if (lastError instanceof Error && 'status' in lastError) {
+      const status = (lastError as any).status
+      
+      // Handle 401 Unauthorized - try to refresh token
+      if (status === 401 && requireAuth && attempt === 0) {
+        try {
+          authService.refreshAccessToken()
+          return lastError // Will retry with new token
+        } catch (refreshError) {
+          return this.createApiError('Session expired. Please log in again.', new Error('Authentication failed'), 401, false)
+        }
+      }
+      
+      // Don't retry on client errors (4xx except 429)
+      if (status >= 400 && status < 500 && status !== 429) {
+        lastError.retryable = false
+      }
+    }
+
+    return lastError
+  }
+
+  private shouldRetry(error: Error, attempt: number, retries: number): boolean {
+    // Don't retry on non-retryable errors
+    if (error instanceof Error && 'retryable' in error && !error.retryable) {
+      return false
+    }
+    
+    // Don't retry on last attempt
+    return attempt < retries
+  }
+
+  private async waitForRetry(attempt: number, retryDelay: number): Promise<void> {
+    const delay = retryDelay * Math.pow(2, attempt)
+    logger.warn(`API request failed (attempt ${attempt + 1}), retrying in ${delay}ms...`)
+    await new Promise(resolve => setTimeout(resolve, delay))
   }
 
   async parseJobDescription(

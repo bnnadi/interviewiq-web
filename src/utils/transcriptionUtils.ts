@@ -60,17 +60,24 @@ export class TranscriptionProcessor {
     return this.getProcessedTranscription()
   }
 
+  // Extract segment merging logic
+  private mergeSegments(segment1: TranscriptionSegment, segment2: TranscriptionSegment): TranscriptionSegment {
+    return {
+      ...segment1,
+      text: this.mergeText(segment1.text, segment2.text),
+      endTime: segment2.endTime,
+      confidence: Math.max(segment1.confidence, segment2.confidence),
+      isFinal: segment2.isFinal
+    }
+  }
+
   // Add a new segment to the transcription
   private addSegment(segment: TranscriptionSegment): void {
-    // Check if we should merge with the last segment
     const lastSegment = this.segments[this.segments.length - 1]
     
     if (lastSegment && this.shouldMergeSegments(lastSegment, segment)) {
       // Merge with the last segment
-      lastSegment.text = this.mergeText(lastSegment.text, segment.text)
-      lastSegment.endTime = segment.endTime
-      lastSegment.confidence = Math.max(lastSegment.confidence, segment.confidence)
-      lastSegment.isFinal = segment.isFinal
+      this.segments[this.segments.length - 1] = this.mergeSegments(lastSegment, segment)
     } else {
       // Add as new segment
       this.segments.push(segment)
@@ -83,6 +90,13 @@ export class TranscriptionProcessor {
     return gap <= this.mergeOptions.maxGap && !segment1.isFinal
   }
 
+  // Extract text merging logic
+  private shouldAddSpace(text1: string, text2: string): boolean {
+    const cleanText1 = text1.trim()
+    const cleanText2 = text2.trim()
+    return !cleanText1.endsWith(' ') && !cleanText2.startsWith(' ')
+  }
+
   // Merge text from two segments
   private mergeText(text1: string, text2: string): string {
     if (!text1) return text2
@@ -90,14 +104,14 @@ export class TranscriptionProcessor {
 
     const cleanText1 = text1.trim()
     const cleanText2 = text2.trim()
+    const needsSpace = this.shouldAddSpace(cleanText1, cleanText2)
 
-    // If text2 is a continuation of text1, merge directly
-    if (cleanText1.endsWith(' ') || cleanText2.startsWith(' ')) {
-      return `${cleanText1} ${cleanText2}`
-    }
+    return needsSpace ? `${cleanText1} ${cleanText2}` : `${cleanText1}${cleanText2}`
+  }
 
-    // Add space between words
-    return `${cleanText1} ${cleanText2}`
+  // Extract text normalization logic
+  private normalizeWhitespace(text: string): string {
+    return text.replace(/\s+/g, ' ')
   }
 
   // Clean and normalize text
@@ -105,16 +119,22 @@ export class TranscriptionProcessor {
     if (!text) return ''
 
     let cleaned = text.trim()
+    cleaned = this.normalizeWhitespace(cleaned)
     
-    // Remove excessive whitespace
-    cleaned = cleaned.replace(/\s+/g, ' ')
-    
-    // Add basic punctuation if missing
     if (this.mergeOptions.preservePunctuation) {
       cleaned = this.addBasicPunctuation(cleaned)
     }
     
     return cleaned
+  }
+
+  // Extract punctuation logic
+  private needsEndPunctuation(text: string): boolean {
+    return !/[.!?]$/.test(text.trim())
+  }
+
+  private capitalizeFirstLetter(text: string): string {
+    return text.charAt(0).toUpperCase() + text.slice(1)
   }
 
   // Add basic punctuation to text
@@ -123,13 +143,11 @@ export class TranscriptionProcessor {
 
     let result = text.trim()
     
-    // Add period at the end if it doesn't end with punctuation
-    if (!/[.!?]$/.test(result)) {
+    if (this.needsEndPunctuation(result)) {
       result += '.'
     }
     
-    // Capitalize first letter
-    result = result.charAt(0).toUpperCase() + result.slice(1)
+    result = this.capitalizeFirstLetter(result)
     
     return result
   }
@@ -207,6 +225,30 @@ export const mergeTranscriptions = (
   return processor.getProcessedTranscription()
 }
 
+// Extract metrics calculation helpers
+const calculateAccuracy = (confidence: number): number => {
+  return Math.min(confidence * 100, 100)
+}
+
+const calculateCompleteness = (wordCount: number, duration: number): number => {
+  const expectedWords = Math.max(1, duration / 1000 * 2.5) // 2.5 words per second
+  return Math.min((wordCount / expectedWords) * 100, 100)
+}
+
+const calculateFluency = (segments: TranscriptionSegment[]): number => {
+  if (segments.length <= 1) return 100
+  
+  const gaps = segments.slice(1).map((segment, index) => 
+    segment.startTime - segments[index].endTime
+  )
+  const averageGap = gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length
+  return Math.max(0, 100 - (averageGap / 100)) // Penalize long gaps
+}
+
+const calculateOverallScore = (accuracy: number, completeness: number, fluency: number): number => {
+  return (accuracy * 0.4 + completeness * 0.3 + fluency * 0.3)
+}
+
 export const calculateTranscriptionMetrics = (
   transcription: ProcessedTranscription
 ): {
@@ -215,25 +257,12 @@ export const calculateTranscriptionMetrics = (
   fluency: number
   overallScore: number
 } => {
-  const { confidence, wordCount, duration } = transcription
+  const { confidence, wordCount, duration, segments } = transcription
   
-  // Calculate accuracy based on confidence
-  const accuracy = Math.min(confidence * 100, 100)
-  
-  // Calculate completeness based on word count and duration
-  const expectedWords = Math.max(1, duration / 1000 * 2.5) // 2.5 words per second
-  const completeness = Math.min((wordCount / expectedWords) * 100, 100)
-  
-  // Calculate fluency based on segment continuity
-  const segments = transcription.segments
-  const gaps = segments.slice(1).map((segment, index) => 
-    segment.startTime - segments[index].endTime
-  )
-  const averageGap = gaps.length > 0 ? gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length : 0
-  const fluency = Math.max(0, 100 - (averageGap / 100)) // Penalize long gaps
-  
-  // Calculate overall score
-  const overallScore = (accuracy * 0.4 + completeness * 0.3 + fluency * 0.3)
+  const accuracy = calculateAccuracy(confidence)
+  const completeness = calculateCompleteness(wordCount, duration)
+  const fluency = calculateFluency(segments)
+  const overallScore = calculateOverallScore(accuracy, completeness, fluency)
   
   return {
     accuracy: Math.round(accuracy),
@@ -256,26 +285,55 @@ export const formatTranscriptionForDisplay = (
   return result
 }
 
-export const extractKeywords = (text: string): string[] => {
-  if (!text) return []
-  
-  // Simple keyword extraction (in a real implementation, this would be more sophisticated)
-  const words = text.toLowerCase()
+// Extract keyword processing helpers
+const preprocessText = (text: string): string[] => {
+  return text.toLowerCase()
     .replace(/[^\w\s]/g, '') // Remove punctuation
     .split(/\s+/)
     .filter(word => word.length > 3) // Filter out short words
-  
-  // Count word frequency
+}
+
+const countWordFrequency = (words: string[]): { [key: string]: number } => {
   const wordCount: { [key: string]: number } = {}
   words.forEach(word => {
     wordCount[word] = (wordCount[word] || 0) + 1
   })
-  
-  // Return most frequent words
+  return wordCount
+}
+
+const getTopWords = (wordCount: { [key: string]: number }, limit: number = 10): string[] => {
   return Object.entries(wordCount)
     .sort(([, a], [, b]) => b - a)
-    .slice(0, 10)
+    .slice(0, limit)
     .map(([word]) => word)
+}
+
+export const extractKeywords = (text: string): string[] => {
+  if (!text) return []
+  
+  const words = preprocessText(text)
+  const wordCount = countWordFrequency(words)
+  return getTopWords(wordCount)
+}
+
+// Extract filler word detection helpers
+const FILLER_WORD_PATTERNS = [
+  /\b(um|uh|er|ah|like|you know|so|well|actually|basically|literally)\b/gi
+]
+
+const findFillerMatches = (text: string): string[] => {
+  const matches: string[] = []
+  FILLER_WORD_PATTERNS.forEach(pattern => {
+    const patternMatches = text.match(pattern)
+    if (patternMatches) {
+      matches.push(...patternMatches.map(match => match.toLowerCase()))
+    }
+  })
+  return matches
+}
+
+const calculateFillerPercentage = (count: number, totalWords: number): number => {
+  return totalWords > 0 ? (count / totalWords) * 100 : 0
 }
 
 export const detectFillerWords = (text: string): {
@@ -283,31 +341,29 @@ export const detectFillerWords = (text: string): {
   count: number
   percentage: number
 } => {
-  const fillerWordPatterns = [
-    /\b(um|uh|er|ah|like|you know|so|well|actually|basically|literally)\b/gi
-  ]
-  
   const words = text.split(/\s+/)
   const totalWords = words.length
-  
-  let fillerWords: string[] = []
-  let count = 0
-  
-  fillerWordPatterns.forEach(pattern => {
-    const matches = text.match(pattern)
-    if (matches) {
-      fillerWords.push(...matches.map(match => match.toLowerCase()))
-      count += matches.length
-    }
-  })
-  
-  const percentage = totalWords > 0 ? (count / totalWords) * 100 : 0
+  const fillerMatches = findFillerMatches(text)
+  const count = fillerMatches.length
+  const percentage = calculateFillerPercentage(count, totalWords)
   
   return {
-    fillerWords: [...new Set(fillerWords)], // Remove duplicates
+    fillerWords: [...new Set(fillerMatches)], // Remove duplicates
     count,
     percentage: Math.round(percentage * 100) / 100
   }
+}
+
+// Extract speaking rate calculation helpers
+const calculateWordsPerMinute = (wordCount: number, durationMs: number): number => {
+  const durationMinutes = durationMs / (1000 * 60)
+  return durationMinutes > 0 ? wordCount / durationMinutes : 0
+}
+
+const categorizeSpeakingRate = (wordsPerMinute: number): 'slow' | 'normal' | 'fast' => {
+  if (wordsPerMinute < 120) return 'slow'
+  if (wordsPerMinute > 180) return 'fast'
+  return 'normal'
 }
 
 export const calculateSpeakingRate = (
@@ -317,17 +373,8 @@ export const calculateSpeakingRate = (
   wordsPerMinute: number
   category: 'slow' | 'normal' | 'fast'
 } => {
-  const durationMinutes = durationMs / (1000 * 60)
-  const wordsPerMinute = durationMinutes > 0 ? wordCount / durationMinutes : 0
-  
-  let category: 'slow' | 'normal' | 'fast'
-  if (wordsPerMinute < 120) {
-    category = 'slow'
-  } else if (wordsPerMinute > 180) {
-    category = 'fast'
-  } else {
-    category = 'normal'
-  }
+  const wordsPerMinute = calculateWordsPerMinute(wordCount, durationMs)
+  const category = categorizeSpeakingRate(wordsPerMinute)
   
   return {
     wordsPerMinute: Math.round(wordsPerMinute),

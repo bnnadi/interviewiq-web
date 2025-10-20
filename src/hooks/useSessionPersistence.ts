@@ -68,43 +68,47 @@ export const useSessionPersistence = (
     refreshSessionHistory()
   }, [])
 
+  // Extract auto-save timer management
+  const clearAutoSaveTimer = useCallback(() => {
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current)
+      autoSaveTimerRef.current = null
+    }
+  }, [])
+
+  const setAutoSaveTimer = useCallback(() => {
+    clearAutoSaveTimer()
+    autoSaveTimerRef.current = setTimeout(() => {
+      saveSession()
+    }, autoSaveInterval)
+  }, [saveSession, autoSaveInterval, clearAutoSaveTimer])
+
   // Auto-save functionality
   useEffect(() => {
     if (autoSaveEnabled && currentSession && hasUnsavedChanges) {
-      // Clear existing timer
-      if (autoSaveTimerRef.current) {
-        clearTimeout(autoSaveTimerRef.current)
-      }
-
-      // Set new timer
-      autoSaveTimerRef.current = setTimeout(() => {
-        saveSession()
-      }, autoSaveInterval)
+      setAutoSaveTimer()
     }
 
-    return () => {
-      if (autoSaveTimerRef.current) {
-        clearTimeout(autoSaveTimerRef.current)
-      }
+    return clearAutoSaveTimer
+  }, [autoSaveEnabled, currentSession, hasUnsavedChanges, setAutoSaveTimer, clearAutoSaveTimer])
+
+  // Extract event handlers
+  const handleSessionSaved = useCallback((event: SessionEvent) => {
+    if (event.type === 'session_saved') {
+      setHasUnsavedChanges(false)
+      onSessionSaved?.(event.data)
     }
-  }, [autoSaveEnabled, currentSession, hasUnsavedChanges, autoSaveInterval])
+  }, [onSessionSaved])
+
+  const handleStorageError = useCallback((event: SessionEvent) => {
+    if (event.type === 'storage_error') {
+      onError?.(event.error)
+    }
+  }, [onError])
 
   // Listen to session events
   useEffect(() => {
     const eventManager = sessionStorage.getEventManager()
-
-    const handleSessionSaved = (event: SessionEvent) => {
-      if (event.type === 'session_saved') {
-        setHasUnsavedChanges(false)
-        onSessionSaved?.(event.data)
-      }
-    }
-
-    const handleStorageError = (event: SessionEvent) => {
-      if (event.type === 'storage_error') {
-        onError?.(event.error)
-      }
-    }
 
     eventManager.on('session_saved', handleSessionSaved)
     eventManager.on('storage_error', handleStorageError)
@@ -113,7 +117,7 @@ export const useSessionPersistence = (
       eventManager.off('session_saved', handleSessionSaved)
       eventManager.off('storage_error', handleStorageError)
     }
-  }, [onSessionSaved, onError])
+  }, [handleSessionSaved, handleStorageError])
 
   // Create new session
   const createSession = useCallback(async (
@@ -145,10 +149,7 @@ export const useSessionPersistence = (
       }
 
       await sessionStorage.saveSession(newSession)
-      setCurrentSession(newSession)
-      setIsSessionActive(true)
-      setHasUnsavedChanges(false)
-      lastSavedDataRef.current = JSON.stringify(newSession)
+      updateSessionState(newSession, true)
 
       logger.info('New session created:', sessionId)
       return sessionId
@@ -166,10 +167,7 @@ export const useSessionPersistence = (
     try {
       const sessionToSave = { ...currentSession }
       await sessionStorage.saveSession(sessionToSave)
-      
-      setCurrentSession(sessionToSave)
-      setHasUnsavedChanges(false)
-      lastSavedDataRef.current = JSON.stringify(sessionToSave)
+      updateSessionState(sessionToSave, true)
 
       logger.info('Session saved:', currentSession.id)
     } catch (error) {
@@ -195,10 +193,7 @@ export const useSessionPersistence = (
         return false
       }
 
-      setCurrentSession(session)
-      setIsSessionActive(true)
-      setHasUnsavedChanges(false)
-      lastSavedDataRef.current = JSON.stringify(session)
+      updateSessionState(session, true)
 
       onSessionResumed?.(session)
       logger.info('Session resumed:', sessionId)
@@ -222,11 +217,7 @@ export const useSessionPersistence = (
       }
 
       await sessionStorage.saveSession(completedSession)
-      
-      setCurrentSession(null)
-      setIsSessionActive(false)
-      setHasUnsavedChanges(false)
-      lastSavedDataRef.current = ''
+      updateSessionState(null, false)
 
       // Refresh session history
       await refreshSessionHistory()
@@ -251,11 +242,7 @@ export const useSessionPersistence = (
       }
 
       await sessionStorage.saveSession(abandonedSession)
-      
-      setCurrentSession(null)
-      setIsSessionActive(false)
-      setHasUnsavedChanges(false)
-      lastSavedDataRef.current = ''
+      updateSessionState(null, false)
 
       // Refresh session history
       await refreshSessionHistory()
@@ -284,19 +271,29 @@ export const useSessionPersistence = (
     }
   }, [onError])
 
+  // Extract session state management
+  const updateSessionState = useCallback((session: SessionData | null, isActive: boolean = false) => {
+    setCurrentSession(session)
+    setIsSessionActive(isActive)
+    setHasUnsavedChanges(false)
+    lastSavedDataRef.current = session ? JSON.stringify(session) : ''
+  }, [])
+
+  const checkForChanges = useCallback((session: SessionData) => {
+    const currentData = JSON.stringify(session)
+    if (currentData !== lastSavedDataRef.current) {
+      setHasUnsavedChanges(true)
+    }
+  }, [])
+
   // Update session data (triggers auto-save)
   const updateSession = useCallback((updates: Partial<SessionData>) => {
     if (!currentSession) return
 
     const updatedSession = { ...currentSession, ...updates }
     setCurrentSession(updatedSession)
-
-    // Check if there are actual changes
-    const currentData = JSON.stringify(updatedSession)
-    if (currentData !== lastSavedDataRef.current) {
-      setHasUnsavedChanges(true)
-    }
-  }, [currentSession])
+    checkForChanges(updatedSession)
+  }, [currentSession, checkForChanges])
 
   // Auto-save control
   const enableAutoSave = useCallback(() => {
@@ -305,10 +302,8 @@ export const useSessionPersistence = (
 
   const disableAutoSave = useCallback(() => {
     setAutoSaveEnabled(false)
-    if (autoSaveTimerRef.current) {
-      clearTimeout(autoSaveTimerRef.current)
-    }
-  }, [])
+    clearAutoSaveTimer()
+  }, [clearAutoSaveTimer])
 
   // Cleanup functions
   const clearExpiredSessions = useCallback(async (): Promise<void> => {

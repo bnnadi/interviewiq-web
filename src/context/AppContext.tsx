@@ -116,6 +116,26 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     navigate('/dashboard')
   }, [navigate])
 
+  // Helper function to extract error message
+  const getErrorMessage = useCallback((error: any, defaultMessage: string): string => {
+    return error.userMessage || `${defaultMessage}: ${error instanceof Error ? error.message : 'Unknown error'}`
+  }, [])
+
+  // Helper function to handle fallback with mock data
+  const handleFallbackWithMockData = useCallback(async (jd: string, role: string) => {
+    const questions = MOCK_QUESTIONS
+    setJobData({ jd, role })
+    setQuestions(questions)
+    
+    try {
+      await createSessionPersistence(jd, role, questions)
+    } catch (sessionError) {
+      logger.error('Failed to create session with mock data:', sessionError)
+    }
+    
+    navigate('/interview/questions')
+  }, [createSessionPersistence, navigate])
+
   const handleJobSubmit = useCallback(async (jd: string, role: string) => {
     setLoading(true)
     setError(null)
@@ -137,28 +157,16 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     } catch (error) {
       logger.error('Error parsing JD:', error)
       
-      // Use enhanced error handling - check if it's an ApiError with user message
-      const apiError = error as any
-      const errorMessage = apiError.userMessage || `Failed to generate questions: ${error instanceof Error ? error.message : 'Unknown error'}`
+      // Extract error message using helper function
+      const errorMessage = getErrorMessage(error, 'Failed to generate questions')
       setError(errorMessage)
       
-      // Fallback to mock data
-      const questions = MOCK_QUESTIONS
-      setJobData({ jd, role })
-      setQuestions(questions)
-      
-      // Create session even with mock data
-      try {
-        await createSessionPersistence(jd, role, questions)
-      } catch (sessionError) {
-        logger.error('Failed to create session with mock data:', sessionError)
-      }
-      
-      navigate('/interview/questions')
+      // Handle fallback using helper function
+      await handleFallbackWithMockData(jd, role)
     } finally {
       setLoading(false)
     }
-  }, [navigate, createSessionPersistence])
+  }, [navigate, createSessionPersistence, getErrorMessage, handleFallbackWithMockData])
 
   const handleQuestionSelect = useCallback((question: string) => {
     setSelectedQuestion(question)
@@ -201,9 +209,8 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     } catch (error) {
       logger.error('Error analyzing answer:', error)
       
-      // Use enhanced error handling - check if it's an ApiError with user message
-      const apiError = error as any
-      const errorMessage = apiError.userMessage || `Failed to analyze answer: ${error instanceof Error ? error.message : 'Unknown error'}`
+      // Extract error message using helper function
+      const errorMessage = getErrorMessage(error, 'Failed to analyze answer')
       setError(errorMessage)
       
       // Fallback to mock feedback
@@ -212,7 +219,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     } finally {
       setLoading(false)
     }
-  }, [jobData.jd, selectedQuestion, navigate, currentSession, updateSessionPersistence])
+  }, [jobData.jd, selectedQuestion, navigate, currentSession, updateSessionPersistence, getErrorMessage])
 
   const handleStartOver = useCallback(async () => {
     // Abandon current session if active

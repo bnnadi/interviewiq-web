@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { Card, CardContent, CardHeader } from '../../components/ui/Card'
 import { Badge } from '../../components/ui/Badge'
 import { ProgressBar } from '../../components/ui/ProgressBar'
@@ -85,49 +85,69 @@ const STARHelper: React.FC<STARHelperProps> = ({
     ]
   }
 
-  useEffect(() => {
-    if (autoDetect) {
-      // Simulate keyword detection
-      const interval = setInterval(() => {
-        setProgress(prev => {
-          const newProgress = { ...prev }
-          const phases = ['situation', 'task', 'action', 'result'] as const
-          
-          phases.forEach(phase => {
-            if (!newProgress[phase].completed) {
-              // Simulate random keyword detection
-              const randomKeyword = newProgress[phase].keywords[Math.floor(Math.random() * newProgress[phase].keywords.length)]
-              if (randomKeyword && !newProgress[phase].detected.includes(randomKeyword)) {
-                newProgress[phase].detected.push(randomKeyword)
-                newProgress[phase].progress = Math.min(100, (newProgress[phase].detected.length / newProgress[phase].keywords.length) * 100)
-                newProgress[phase].completed = newProgress[phase].progress >= 80
-              }
-            }
-          })
-          
-          onProgressUpdate?.(newProgress)
-          return newProgress
-        })
-      }, 3000)
-
-      return () => clearInterval(interval)
-    }
-    return undefined
-  }, [autoDetect, onProgressUpdate])
-
-  useEffect(() => {
-    // Update current phase based on progress
-    const phases = ['situation', 'task', 'action', 'result'] as const
-    for (const phase of phases) {
-      if (!progress[phase].completed) {
-        setCurrentPhase(phase)
-        break
-      }
-    }
+  // Extract keyword detection logic
+  const detectKeyword = useCallback((phase: keyof STARProgress, phaseData: STARProgress[keyof STARProgress]) => {
+    if (phaseData.completed) return null
     
-    // Update tips
-    setTips(phaseTips[currentPhase])
-  }, [progress, currentPhase])
+    const availableKeywords = phaseData.keywords.filter(keyword => !phaseData.detected.includes(keyword))
+    if (availableKeywords.length === 0) return null
+    
+    const randomKeyword = availableKeywords[Math.floor(Math.random() * availableKeywords.length)]
+    const newDetected = [...phaseData.detected, randomKeyword]
+    const newProgress = Math.min(100, (newDetected.length / phaseData.keywords.length) * 100)
+    
+    return {
+      detected: newDetected,
+      progress: newProgress,
+      completed: newProgress >= 80
+    }
+  }, [])
+
+  // Extract progress update logic
+  const updatePhaseProgress = useCallback((phase: keyof STARProgress, phaseData: STARProgress[keyof STARProgress]) => {
+    const detection = detectKeyword(phase, phaseData)
+    if (!detection) return phaseData
+    
+    return {
+      ...phaseData,
+      detected: detection.detected,
+      progress: detection.progress,
+      completed: detection.completed
+    }
+  }, [detectKeyword])
+
+  useEffect(() => {
+    if (!autoDetect) return undefined
+    
+    const interval = setInterval(() => {
+      setProgress(prev => {
+        const phases = ['situation', 'task', 'action', 'result'] as const
+        const newProgress = { ...prev }
+        
+        phases.forEach(phase => {
+          newProgress[phase] = updatePhaseProgress(phase, prev[phase])
+        })
+        
+        onProgressUpdate?.(newProgress)
+        return newProgress
+      })
+    }, 3000)
+
+    return () => clearInterval(interval)
+  }, [autoDetect, onProgressUpdate, updatePhaseProgress])
+
+  // Extract phase update logic
+  const updateCurrentPhase = useCallback((progress: STARProgress) => {
+    const phases = ['situation', 'task', 'action', 'result'] as const
+    const nextPhase = phases.find(phase => !progress[phase].completed) || 'result'
+    return nextPhase
+  }, [])
+
+  useEffect(() => {
+    const nextPhase = updateCurrentPhase(progress)
+    setCurrentPhase(nextPhase)
+    setTips(phaseTips[nextPhase])
+  }, [progress, updateCurrentPhase])
 
   const getPhaseIcon = (phase: keyof STARProgress) => {
     const icons = {
@@ -145,16 +165,28 @@ const STARHelper: React.FC<STARHelperProps> = ({
   //   return 'text-gray-600 bg-gray-100'
   // }
 
-  const getOverallProgress = () => {
-    const phases = ['situation', 'task', 'action', 'result'] as const
+  // Extract progress calculation logic
+  const phases = ['situation', 'task', 'action', 'result'] as const
+  
+  const getOverallProgress = useCallback(() => {
     const totalProgress = phases.reduce((sum, phase) => sum + progress[phase].progress, 0)
     return totalProgress / phases.length
-  }
+  }, [progress])
 
-  const getCompletedPhases = () => {
-    const phases = ['situation', 'task', 'action', 'result'] as const
+  const getCompletedPhases = useCallback(() => {
     return phases.filter(phase => progress[phase].completed).length
-  }
+  }, [progress])
+
+  // Extract reset logic
+  const resetProgress = useCallback(() => {
+    setProgress({
+      situation: { completed: false, progress: 0, keywords: ['when', 'where', 'context', 'background'], detected: [] },
+      task: { completed: false, progress: 0, keywords: ['responsibility', 'goal', 'objective', 'challenge'], detected: [] },
+      action: { completed: false, progress: 0, keywords: ['what', 'how', 'steps', 'approach', 'solution'], detected: [] },
+      result: { completed: false, progress: 0, keywords: ['outcome', 'impact', 'learned', 'achieved', 'result'], detected: [] }
+    })
+    setCurrentPhase('situation')
+  }, [])
 
   if (!isActive) return null
 
@@ -278,15 +310,7 @@ const STARHelper: React.FC<STARHelperProps> = ({
                 Mark {currentPhase} complete
               </button>
               <button
-                onClick={() => {
-                  setProgress({
-                    situation: { completed: false, progress: 0, keywords: ['when', 'where', 'context', 'background'], detected: [] },
-                    task: { completed: false, progress: 0, keywords: ['responsibility', 'goal', 'objective', 'challenge'], detected: [] },
-                    action: { completed: false, progress: 0, keywords: ['what', 'how', 'steps', 'approach', 'solution'], detected: [] },
-                    result: { completed: false, progress: 0, keywords: ['outcome', 'impact', 'learned', 'achieved', 'result'], detected: [] }
-                  })
-                  setCurrentPhase('situation')
-                }}
+                onClick={resetProgress}
                 className="px-3 py-1 text-sm bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors"
               >
                 Reset Progress
