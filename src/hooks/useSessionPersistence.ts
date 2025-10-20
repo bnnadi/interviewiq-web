@@ -136,6 +136,7 @@ export const useSessionPersistence = (
         startTime: now,
         lastSaved: now,
         status: 'in_progress',
+        mode: 'interview', // Default to interview mode
         deviceInfo: {
           userAgent: navigator.userAgent,
           screenResolution: `${screen.width}x${screen.height}`,

@@ -45,6 +45,41 @@ const QuestionListPage = lazy(() => import('@pages/QuestionListPage'))
 const AnswerRecorderPage = lazy(() => import('@pages/AnswerRecorderPage'))
 const FeedbackPage = lazy(() => import('@pages/FeedbackPage'))
 
+// Route configuration for protected routes
+interface RouteConfig {
+  path: string
+  component: React.LazyExoticComponent<React.ComponentType<any>>
+  role: 'user' | 'enterprise'
+}
+
+const protectedRoutes: RouteConfig[] = [
+  // User routes
+  { path: '/dashboard', component: UserDashboard, role: 'user' },
+  { path: '/practice', component: PracticeIndex, role: 'user' },
+  { path: '/practice/live', component: PracticeLive, role: 'user' },
+  { path: '/feedback/summary', component: FeedbackSummary, role: 'user' },
+  { path: '/feedback/body', component: FeedbackBody, role: 'user' },
+  { path: '/progress', component: UserProgress, role: 'user' },
+  { path: '/settings', component: UserSettings, role: 'user' },
+  { path: '/profile', component: UserProfile, role: 'user' },
+  { path: '/data', component: DataManagement, role: 'user' },
+  
+  // Enterprise routes
+  { path: '/enterprise/dashboard', component: EnterpriseDashboard, role: 'enterprise' },
+  { path: '/enterprise/sessions', component: EnterpriseSessions, role: 'enterprise' },
+  { path: '/enterprise/analytics', component: EnterpriseAnalytics, role: 'enterprise' },
+  { path: '/enterprise/settings', component: EnterpriseSettings, role: 'enterprise' },
+  
+  // Session routes - commented out until SessionSimulation component is created
+  // { path: '/session/:sessionId', component: SessionSimulation, role: 'user' },
+  
+  // Legacy routes for backward compatibility
+  { path: '/interview/new', component: JobInputPage, role: 'user' },
+  { path: '/interview/questions', component: QuestionListPage, role: 'user' },
+  { path: '/interview/record', component: AnswerRecorderPage, role: 'user' },
+  { path: '/interview/feedback', component: FeedbackPage, role: 'user' },
+]
+
 // Global loading component that waits for auth to finish
 const GlobalLoadingScreen: React.FC = () => {
   return (
@@ -99,143 +134,21 @@ const AppContent: React.FC = () => {
           
           {/* Root redirect */}
           <Route path="/" element={<RootRedirect />} />
-        
-        {/* User Routes - Protected */}
-        <Route path="/dashboard" element={
-          <ProtectedRoute requiredRole="user">
-            <MainLayout>
-              <UserDashboard />
-            </MainLayout>
-          </ProtectedRoute>
-        } />
-        
-        <Route path="/practice" element={
-          <ProtectedRoute requiredRole="user">
-            <MainLayout>
-              <PracticeIndex />
-            </MainLayout>
-          </ProtectedRoute>
-        } />
-        
-        <Route path="/practice/live" element={
-          <ProtectedRoute requiredRole="user">
-            <MainLayout>
-              <PracticeLive />
-            </MainLayout>
-          </ProtectedRoute>
-        } />
-        
-        <Route path="/feedback/summary" element={
-          <ProtectedRoute requiredRole="user">
-            <MainLayout>
-              <FeedbackSummary />
-            </MainLayout>
-          </ProtectedRoute>
-        } />
-        
-        <Route path="/feedback/body" element={
-          <ProtectedRoute requiredRole="user">
-            <MainLayout>
-              <FeedbackBody />
-            </MainLayout>
-          </ProtectedRoute>
-        } />
-        
-        <Route path="/progress" element={
-          <ProtectedRoute requiredRole="user">
-            <MainLayout>
-              <UserProgress />
-            </MainLayout>
-          </ProtectedRoute>
-        } />
-        
-        <Route path="/settings" element={
-          <ProtectedRoute requiredRole="user">
-            <MainLayout>
-              <UserSettings />
-            </MainLayout>
-          </ProtectedRoute>
-        } />
-        
-                 <Route path="/profile" element={
-                   <ProtectedRoute requiredRole="user">
-                     <MainLayout>
-                       <UserProfile />
-                     </MainLayout>
-                   </ProtectedRoute>
-                 } />
 
-                 <Route path="/data" element={
-                   <ProtectedRoute requiredRole="user">
-                     <MainLayout>
-                       <DataManagement />
-                     </MainLayout>
-                   </ProtectedRoute>
-                 } />
-        
-        {/* Enterprise Routes - Protected */}
-        <Route path="/enterprise/dashboard" element={
-          <ProtectedRoute requiredRole="enterprise">
-            <MainLayout>
-              <EnterpriseDashboard />
-            </MainLayout>
-          </ProtectedRoute>
-        } />
-        
-        <Route path="/enterprise/sessions" element={
-          <ProtectedRoute requiredRole="enterprise">
-            <MainLayout>
-              <EnterpriseSessions />
-            </MainLayout>
-          </ProtectedRoute>
-        } />
-        
-        <Route path="/enterprise/analytics" element={
-          <ProtectedRoute requiredRole="enterprise">
-            <MainLayout>
-              <EnterpriseAnalytics />
-            </MainLayout>
-          </ProtectedRoute>
-        } />
-        
-        <Route path="/enterprise/settings" element={
-          <ProtectedRoute requiredRole="enterprise">
-            <MainLayout>
-              <EnterpriseSettings />
-            </MainLayout>
-          </ProtectedRoute>
-        } />
-        
-        
-        {/* Legacy Routes for backward compatibility */}
-        <Route path="/interview/new" element={
-          <ProtectedRoute requiredRole="user">
-            <MainLayout>
-              <JobInputPage />
-            </MainLayout>
-          </ProtectedRoute>
-        } />
-        <Route path="/interview/questions" element={
-          <ProtectedRoute requiredRole="user">
-            <MainLayout>
-              <QuestionListPage />
-            </MainLayout>
-          </ProtectedRoute>
-        } />
-        <Route path="/interview/record" element={
-          <ProtectedRoute requiredRole="user">
-            <MainLayout>
-              <AnswerRecorderPage />
-            </MainLayout>
-          </ProtectedRoute>
-        } />
-        <Route path="/interview/feedback" element={
-          <ProtectedRoute requiredRole="user">
-            <MainLayout>
-              <FeedbackPage />
-            </MainLayout>
-          </ProtectedRoute>
-        } />
+        {/* Protected Routes - Dynamically Generated */}
+        {protectedRoutes.map(({ path, component: Component, role }) => (
+          <Route 
+            key={path}
+            path={path} 
+            element={
+              <ProtectedRoute requiredRole={role}>
+                <MainLayout>
+                  <Component />
+                </MainLayout>
+              </ProtectedRoute>
+            } 
+          />
+        ))}
         
           {/* 404 Route */}
           <Route path="*" element={<NotFound />} />
