@@ -127,6 +127,46 @@ export const exportAllData = (userData: UserData, sessions: SessionSummary[]): s
   return JSON.stringify(exportData, null, 2)
 }
 
+// Extract validation logic
+const validateImportData = (data: any): string | null => {
+  if (!data.user || !data.sessions || !Array.isArray(data.sessions)) {
+    return 'Invalid data: missing required fields'
+  }
+  return null
+}
+
+// Extract user data import logic
+const importUserDataFromObject = (userData: any): { userData: UserData | null; error: string | null } => {
+  const userResult = importUserData(JSON.stringify(userData))
+  if (userResult.error) {
+    return { userData: null, error: `User data error: ${userResult.error}` }
+  }
+  return { userData: userResult.userData, error: null }
+}
+
+// Extract session import logic
+const importSessionsFromArray = (sessionsData: any[]): SessionSummary[] => {
+  const sessions: SessionSummary[] = []
+  for (const sessionData of sessionsData) {
+    const sessionResult = importSessionSummary(JSON.stringify(sessionData))
+    if (sessionResult.error) {
+      logger.warn('Failed to import session:', sessionResult.error)
+      continue
+    }
+    sessions.push(sessionResult.session!)
+  }
+  return sessions
+}
+
+// Extract error handling logic
+const handleImportError = (error: any): { userData: null; sessions: []; error: string } => {
+  return { 
+    userData: null, 
+    sessions: [], 
+    error: `Failed to parse data: ${error}` 
+  }
+}
+
 export const importAllData = (jsonString: string): { 
   userData: UserData | null; 
   sessions: SessionSummary[]; 
@@ -136,26 +176,19 @@ export const importAllData = (jsonString: string): {
     const data = JSON.parse(jsonString)
     
     // Validate required fields
-    if (!data.user || !data.sessions || !Array.isArray(data.sessions)) {
-      return { userData: null, sessions: [], error: 'Invalid data: missing required fields' }
+    const validationError = validateImportData(data)
+    if (validationError) {
+      return { userData: null, sessions: [], error: validationError }
     }
 
     // Import user data
-    const userResult = importUserData(JSON.stringify(data.user))
+    const userResult = importUserDataFromObject(data.user)
     if (userResult.error) {
-      return { userData: null, sessions: [], error: `User data error: ${userResult.error}` }
+      return { userData: null, sessions: [], error: userResult.error }
     }
 
     // Import sessions
-    const sessions: SessionSummary[] = []
-    for (const sessionData of data.sessions) {
-      const sessionResult = importSessionSummary(JSON.stringify(sessionData))
-      if (sessionResult.error) {
-        logger.warn('Failed to import session:', sessionResult.error)
-        continue
-      }
-      sessions.push(sessionResult.session!)
-    }
+    const sessions = importSessionsFromArray(data.sessions)
 
     return { 
       userData: userResult.userData, 
@@ -163,7 +196,32 @@ export const importAllData = (jsonString: string): {
       error: null 
     }
   } catch (error) {
-    return { userData: null, sessions: [], error: `Failed to parse data: ${error}` }
+    return handleImportError(error)
+  }
+}
+
+// Extract session validation logic
+const validateSessionSummaryData = (data: any): string | null => {
+  if (!data.id || !data.role || !data.startTime || !data.lastSaved) {
+    return 'Invalid session summary: missing required fields'
+  }
+  return null
+}
+
+// Extract date conversion logic
+const convertSessionDates = (data: any): SessionSummary => {
+  return {
+    ...data,
+    startTime: new Date(data.startTime),
+    lastSaved: new Date(data.lastSaved)
+  }
+}
+
+// Extract session import error handling
+const handleSessionImportError = (error: any): { session: null; error: string } => {
+  return { 
+    session: null, 
+    error: `Failed to parse session summary: ${error}` 
   }
 }
 
@@ -176,20 +234,17 @@ export const importSessionSummary = (jsonString: string): {
     const data = JSON.parse(jsonString)
     
     // Validate required fields
-    if (!data.id || !data.role || !data.startTime || !data.lastSaved) {
-      return { session: null, error: 'Invalid session summary: missing required fields' }
+    const validationError = validateSessionSummaryData(data)
+    if (validationError) {
+      return { session: null, error: validationError }
     }
 
     // Convert date strings back to Date objects
-    const session: SessionSummary = {
-      ...data,
-      startTime: new Date(data.startTime),
-      lastSaved: new Date(data.lastSaved)
-    }
+    const session = convertSessionDates(data)
 
     return { session, error: null }
   } catch (error) {
-    return { session: null, error: `Failed to parse session summary: ${error}` }
+    return handleSessionImportError(error)
   }
 }
 

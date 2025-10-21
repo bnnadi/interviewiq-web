@@ -25,7 +25,7 @@ const Dashboard: React.FC = () => {
         setSessionHistory(sessions)
         
         // Calculate stats from session history
-        const completedSessions = sessions.filter((s: SessionSummary) => s.status === 'completed')
+        const completedSessions = getCompletedSessions(sessions)
         const totalSessions = completedSessions.length
         
         // For now, use mock data for scores since we don't have score data in SessionSummary
@@ -55,23 +55,30 @@ const Dashboard: React.FC = () => {
     loadSessionHistory()
   }, [])
   
-  // Calculate current streak from session history
-  const calculateCurrentStreak = (sessions: SessionSummary[]): number => {
-    if (sessions.length === 0) return 0
-    
-    // Sort sessions by date (most recent first)
-    const sortedSessions = sessions.sort((a, b) => 
+  // Extract date normalization logic
+  const normalizeDate = (date: Date): Date => {
+    const normalized = new Date(date)
+    normalized.setHours(0, 0, 0, 0)
+    return normalized
+  }
+
+  // Extract session sorting logic
+  const sortSessionsByDate = (sessions: SessionSummary[]): SessionSummary[] => {
+    return sessions.sort((a, b) => 
       new Date(b.lastSaved).getTime() - new Date(a.lastSaved).getTime()
     )
+  }
+
+  // Extract streak calculation logic
+  const calculateStreakFromSessions = (sessions: SessionSummary[]): number => {
+    if (sessions.length === 0) return 0
     
+    const sortedSessions = sortSessionsByDate(sessions)
+    const today = normalizeDate(new Date())
     let streak = 0
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
     
     for (const session of sortedSessions) {
-      const sessionDate = new Date(session.lastSaved)
-      sessionDate.setHours(0, 0, 0, 0)
-      
+      const sessionDate = normalizeDate(new Date(session.lastSaved))
       const daysDiff = Math.floor((today.getTime() - sessionDate.getTime()) / (1000 * 60 * 60 * 24))
       
       if (daysDiff === streak) {
@@ -83,18 +90,29 @@ const Dashboard: React.FC = () => {
     
     return streak
   }
+
+  // Calculate current streak from session history
+  const calculateCurrentStreak = (sessions: SessionSummary[]): number => {
+    return calculateStreakFromSessions(sessions)
+  }
   
+  // Extract session processing logic
+  const processSessionForDisplay = (session: SessionSummary) => ({
+    id: session.id,
+    role: session.role,
+    date: new Date(session.lastSaved).toLocaleDateString(),
+    score: 7.2, // Mock score - in real implementation, store this in session data
+    status: session.status
+  })
+
+  const getCompletedSessions = (sessions: SessionSummary[]): SessionSummary[] => {
+    return sessions.filter(s => s.status === 'completed')
+  }
+
   // Get recent sessions (last 3)
-  const recentSessions = sessionHistory
-    .filter(s => s.status === 'completed')
+  const recentSessions = getCompletedSessions(sessionHistory)
     .slice(0, 3)
-    .map(session => ({
-      id: session.id,
-      role: session.role,
-      date: new Date(session.lastSaved).toLocaleDateString(),
-      score: 7.2, // Mock score - in real implementation, store this in session data
-      status: session.status
-    }))
+    .map(processSessionForDisplay)
 
   return (
     <div className="space-y-6">

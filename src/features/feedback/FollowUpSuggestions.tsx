@@ -188,37 +188,31 @@ const FollowUpSuggestions: React.FC<FollowUpSuggestionsProps> = ({
   //   }
   // }
 
-  const getTypeIcon = (type: Suggestion['type']) => {
-    switch (type) {
-      case 'practice':
-        return '🏃‍♂️'
-      case 'technique':
-        return '🎯'
-      case 'preparation':
-        return '📚'
-      case 'mindset':
-        return '🧠'
-      default:
-        return '💡'
-    }
+  // Extract icon mappings to constants
+  const TYPE_ICONS: Record<Suggestion['type'], string> = {
+    practice: '🏃‍♂️',
+    technique: '🎯',
+    preparation: '📚',
+    mindset: '🧠'
   }
 
-  const getResourceIcon = (type: NonNullable<Suggestion['resources']>[0]['type']) => {
-    switch (type) {
-      case 'article':
-        return '📄'
-      case 'video':
-        return '🎥'
-      case 'exercise':
-        return '💪'
-      case 'tool':
-        return '🛠️'
-      default:
-        return '🔗'
-    }
+  const RESOURCE_ICONS: Record<NonNullable<Suggestion['resources']>[0]['type'], string> = {
+    article: '📄',
+    video: '🎥',
+    exercise: '💪',
+    tool: '🛠️'
   }
 
-  const handleSuggestionComplete = (suggestionId: string) => {
+  const getTypeIcon = (type: Suggestion['type']): string => {
+    return TYPE_ICONS[type] || '💡'
+  }
+
+  const getResourceIcon = (type: NonNullable<Suggestion['resources']>[0]['type']): string => {
+    return RESOURCE_ICONS[type] || '🔗'
+  }
+
+  // Extract suggestion toggle logic
+  const toggleSuggestionCompletion = (suggestionId: string) => {
     setCompletedSuggestions(prev => {
       const newSet = new Set(prev)
       if (newSet.has(suggestionId)) {
@@ -230,10 +224,22 @@ const FollowUpSuggestions: React.FC<FollowUpSuggestionsProps> = ({
     })
   }
 
-  const sortedWeakAreas = [...sampleWeakAreas].sort((a, b) => {
-    const priorityOrder = { high: 3, medium: 2, low: 1 }
-    return priorityOrder[b.priority] - priorityOrder[a.priority]
-  })
+  // Extract priority weight calculation
+  const getPriorityWeight = (priority: WeakArea['priority']): number => {
+    const priorityWeights = { high: 3, medium: 2, low: 1 }
+    return priorityWeights[priority]
+  }
+
+  // Extract sorting logic
+  const sortByPriority = (a: WeakArea, b: WeakArea): number => {
+    return getPriorityWeight(b.priority) - getPriorityWeight(a.priority)
+  }
+
+  const handleSuggestionComplete = (suggestionId: string) => {
+    toggleSuggestionCompletion(suggestionId)
+  }
+
+  const sortedWeakAreas = [...sampleWeakAreas].sort(sortByPriority)
 
   return (
     <div className="space-y-6">
