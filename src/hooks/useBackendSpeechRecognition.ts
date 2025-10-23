@@ -1,7 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
-import { speechApiService, SpeechTranscriptionResult, SpeechAnalysisResult } from '../services/speechApiService'
-import { audioProcessor, AudioChunk, AudioQualityMetrics } from '../utils/audioUtils'
-import { transcriptionProcessor, ProcessedTranscription, TranscriptionSegment } from '../utils/transcriptionUtils'
+import { useState, useCallback, useRef, useEffect } from 'react'
+import { speechApiService, SpeechTranscriptionResponse, RealTimeTranscriptionEvent } from '../services/speechApiService'
 import { logger } from '../utils/logger'
 
 export interface UseBackendSpeechRecognitionOptions {
@@ -9,8 +7,8 @@ export interface UseBackendSpeechRecognitionOptions {
   enableRealTime?: boolean
   enableAnalysis?: boolean
   chunkSize?: number
-  onTranscription?: (transcription: ProcessedTranscription) => void
-  onAnalysis?: (analysis: SpeechAnalysisResult) => void
+  onTranscription?: (result: SpeechTranscriptionResponse) => void
+  onAnalysis?: (analysis: any) => void
   onError?: (error: Error) => void
   onConnectionChange?: (connected: boolean) => void
 }
@@ -26,27 +24,24 @@ export interface UseBackendSpeechRecognitionReturn {
   confidence: number
   error: string | null
   
-  // Audio quality
-  audioQuality: AudioQualityMetrics | null
-  isGoodQuality: boolean
+  // Audio quality metrics
+  audioQuality: {
+    volume: number
+    noiseLevel: number
+    clarity: number
+    isGoodQuality: boolean
+  } | null
   
   // Transcription data
-  processedTranscription: ProcessedTranscription | null
-  segments: TranscriptionSegment[]
+  processedTranscription: {
+    fullText: string
+    segments: any[]
+    confidence: number
+    wordCount: number
+    duration: number
+  } | null
   
-  // Controls
-  startListening: () => Promise<void>
-  stopListening: () => Promise<void>
-  pauseListening: () => void
-  resumeListening: () => void
-  reset: () => void
-  
-  // Connection management
-  connect: () => Promise<void>
-  disconnect: () => void
-  
-  // File upload
-  uploadAudioFile: (file: File) => Promise<void>
+  segments: any[]
   
   // Statistics
   stats: {
@@ -55,6 +50,24 @@ export interface UseBackendSpeechRecognitionReturn {
     segmentCount: number
     averageConfidence: number
   }
+  
+  // Actions
+  startListening: () => Promise<void>
+  stopListening: () => Promise<void>
+  pauseListening: () => void
+  resumeListening: () => void
+  clearTranscript: () => void
+  reset: () => void
+  uploadAudioFile: (file: File) => Promise<SpeechTranscriptionResponse>
+  
+  // Real-time features
+  startRealTimeTranscription: () => Promise<void>
+  stopRealTimeTranscription: () => Promise<void>
+  sendAudioChunk: (chunk: Blob) => Promise<void>
+  
+  // Utility functions
+  getSupportedLanguages: () => Promise<string[]>
+  getSupportedFormats: () => Promise<string[]>
 }
 
 export const useBackendSpeechRecognition = (
@@ -63,10 +76,8 @@ export const useBackendSpeechRecognition = (
   const {
     language = 'en-US',
     enableRealTime = true,
-    enableAnalysis = true,
     chunkSize = 3000,
     onTranscription,
-    onAnalysis,
     onError,
     onConnectionChange
   } = options
@@ -80,12 +91,26 @@ export const useBackendSpeechRecognition = (
   const [interimTranscript, setInterimTranscript] = useState('')
   const [confidence, setConfidence] = useState(0)
   const [error, setError] = useState<string | null>(null)
-  const [audioQuality, setAudioQuality] = useState<AudioQualityMetrics | null>(null)
-  const [processedTranscription, setProcessedTranscription] = useState<ProcessedTranscription | null>(null)
-  const [segments, setSegments] = useState<TranscriptionSegment[]>([])
+  const [audioQuality] = useState<{
+    volume: number
+    noiseLevel: number
+    clarity: number
+    isGoodQuality: boolean
+  } | null>(null)
+  const [processedTranscription, setProcessedTranscription] = useState<{
+    fullText: string
+    segments: any[]
+    confidence: number
+    wordCount: number
+    duration: number
+  } | null>(null)
+  const [segments, setSegments] = useState<any[]>([])
 
   // Refs
-  const processorRef = useRef(transcriptionProcessor)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const audioStreamRef = useRef<MediaStream | null>(null)
+  const wsRef = useRef<WebSocket | null>(null)
+  const audioChunksRef = useRef<Blob[]>([])
   const startTimeRef = useRef<number>(0)
   const statsRef = useRef({
     totalDuration: 0,
@@ -94,245 +119,370 @@ export const useBackendSpeechRecognition = (
     averageConfidence: 0
   })
 
-  // Initialize processor
-  useEffect(() => {
-    processorRef.current = new transcriptionProcessor()
-  }, [])
-
   // Handle transcription results
-  const handleTranscription = useCallback((result: SpeechTranscriptionResult) => {
+  const handleTranscription = useCallback((result: SpeechTranscriptionResponse) => {
     try {
-      const processed = processorRef.current.processTranscriptionResult(result, startTimeRef.current)
-      
-      setTranscript(processed.fullText)
-      setInterimTranscript(processorRef.current.getInterimTranscription())
-      setConfidence(processed.confidence)
-      setSegments(processed.segments)
-      setProcessedTranscription(processed)
+      logger.info('Received transcription result:', { 
+        confidence: result.confidence,
+        isFinal: result.isFinal,
+        duration: result.duration 
+      })
+
+      if (result.isFinal) {
+        setTranscript(prev => prev + (prev ? ' ' : '') + result.transcript)
+        setInterimTranscript('')
+        
+        // Update segments
+        if (result.segments && Array.isArray(result.segments)) {
+          setSegments(prev => [...prev, ...(result.segments as any[])])
+        }
+        
+        // Update processed transcription
+        setProcessedTranscription(prev => {
+          const newText = (prev?.fullText || '') + (prev?.fullText ? ' ' : '') + result.transcript
+          const newSegments = [...(prev?.segments || []), ...(result.segments && Array.isArray(result.segments) ? (result.segments as any[]) : [])]
+          const newWordCount = newText.split(/\s+/).filter(word => word.length > 0).length
+          const newDuration = (prev?.duration || 0) + result.duration
+          const newConfidence = newSegments.length > 0 
+            ? newSegments.reduce((sum, seg) => sum + seg.confidence, 0) / newSegments.length
+            : result.confidence
+
+          return {
+            fullText: newText,
+            segments: newSegments,
+            confidence: newConfidence,
+            wordCount: newWordCount,
+            duration: newDuration
+          }
+        })
+      } else {
+        setInterimTranscript(result.transcript)
+      }
+
+      setConfidence(result.confidence)
       
       // Update stats
       statsRef.current = {
-        totalDuration: processed.duration,
-        wordCount: processed.wordCount,
-        segmentCount: processed.segments.length,
-        averageConfidence: processed.confidence
+        totalDuration: processedTranscription?.duration || 0,
+        wordCount: processedTranscription?.wordCount || 0,
+        segmentCount: segments.length,
+        averageConfidence: result.confidence
       }
-      
-      onTranscription?.(processed)
+
+      onTranscription?.(result)
     } catch (err) {
-      const error = err instanceof Error ? err : new Error('Transcription processing failed')
+      const error = err instanceof Error ? err : new Error('Failed to process transcription')
       logger.error('Failed to process transcription:', error)
       setError(error.message)
       onError?.(error)
     }
-  }, [onTranscription, onError])
+  }, [onTranscription, onError, processedTranscription, segments])
 
-  // Handle analysis results
-  const handleAnalysis = useCallback((analysis: SpeechAnalysisResult) => {
-    logger.info('Speech analysis completed:', analysis)
-    onAnalysis?.(analysis)
-  }, [onAnalysis])
-
-  // Handle connection changes
-  const handleConnectionChange = useCallback((connected: boolean) => {
-    setIsConnected(connected)
-    setIsConnecting(false)
-    onConnectionChange?.(connected)
-  }, [onConnectionChange])
-
-  // Handle errors
-  const handleError = useCallback((error: Error) => {
-    logger.error('Speech recognition error:', error)
-    setError(error.message)
-    setIsListening(false)
-    setIsPaused(false)
-    onError?.(error)
-  }, [onError])
-
-  // Connect to WebSocket
-  const connect = useCallback(async () => {
-    if (isConnected || isConnecting) return
-
-    setIsConnecting(true)
-    setError(null)
-
+  // Handle real-time transcription events
+  const handleRealTimeEvent = useCallback((event: RealTimeTranscriptionEvent) => {
     try {
-      await speechApiService.connectWebSocket(
-        handleTranscription,
-        handleError,
-        handleConnectionChange
-      )
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error('Failed to connect')
-      handleError(error)
-    }
-  }, [isConnected, isConnecting, handleTranscription, handleError, handleConnectionChange])
-
-  // Disconnect from WebSocket
-  const disconnect = useCallback(() => {
-    speechApiService.disconnectWebSocket()
-    setIsConnected(false)
-    setIsConnecting(false)
-  }, [])
-
-  // Start listening
-  const startListening = useCallback(async () => {
-    if (isListening) return
-
-    setError(null)
-    setIsPaused(false)
-    startTimeRef.current = Date.now()
-
-    try {
-      // Connect if not already connected
-      if (!isConnected && enableRealTime) {
-        await connect()
+      if (event.type === 'error') {
+        const error = new Error('Real-time transcription error')
+        logger.error('Real-time transcription error:', error)
+        setError(error.message)
+        onError?.(error)
+        return
       }
 
-      // Start audio recording
-      await audioProcessor.startRecording(
-        async (chunk: AudioChunk) => {
-          // Analyze audio quality
-          try {
-            const quality = await audioProcessor.analyzeAudioQuality(chunk.data)
-            setAudioQuality(quality)
-          } catch (err) {
-            logger.warn('Failed to analyze audio quality:', err)
-          }
+      handleTranscription(event.data)
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error('Failed to handle real-time event')
+      logger.error('Failed to handle real-time event:', error)
+      setError(error.message)
+      onError?.(error)
+    }
+  }, [handleTranscription, onError])
 
-          // Send to backend if connected
-          if (isConnected && enableRealTime) {
-            speechApiService.sendAudioData(chunk.data)
-          }
-        },
-        (err: Error) => {
-          handleError(err)
+  // Start listening with backend API
+  const startListening = useCallback(async () => {
+    try {
+      if (isListening) {
+        logger.warn('Already listening')
+        return
+      }
+
+      setIsConnecting(true)
+      setError(null)
+
+      // Get user media
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          sampleRate: 44100,
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
         }
-      )
+      })
+
+      audioStreamRef.current = stream
+      startTimeRef.current = Date.now()
+
+      if (enableRealTime) {
+        // Start real-time transcription
+        await startRealTimeTranscription()
+      } else {
+        // Start regular recording
+        const mediaRecorder = new MediaRecorder(stream, {
+          mimeType: 'audio/webm;codecs=opus',
+          audioBitsPerSecond: 128000
+        })
+
+        mediaRecorderRef.current = mediaRecorder
+        audioChunksRef.current = []
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            audioChunksRef.current.push(event.data)
+          }
+        }
+
+        mediaRecorder.onstop = async () => {
+          try {
+            const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
+            const result = await speechApiService.transcribeAudio({
+              audio: audioBlob,
+              language,
+              realTime: false
+            })
+            handleTranscription(result)
+          } catch (err) {
+            const error = err instanceof Error ? err : new Error('Transcription failed')
+            logger.error('Transcription failed:', error)
+            setError(error.message)
+            onError?.(error)
+          }
+        }
+
+        mediaRecorder.start(chunkSize)
+      }
 
       setIsListening(true)
-      logger.info('Started listening with backend speech recognition')
+      setIsConnecting(false)
+      setIsConnected(true)
+      onConnectionChange?.(true)
+
+      logger.info('Started listening with backend API')
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Failed to start listening')
-      handleError(error)
+      logger.error('Failed to start listening:', error)
+      setError(error.message)
+      setIsConnecting(false)
+      onError?.(error)
     }
-  }, [isListening, isConnected, enableRealTime, connect, handleError])
+  }, [isListening, enableRealTime, language, chunkSize, onError, onConnectionChange])
 
   // Stop listening
   const stopListening = useCallback(async () => {
-    if (!isListening) return
-
     try {
-      // Stop audio recording
-      const audioBlob = await audioProcessor.stopRecording()
-      
-      // Process final transcription if not using real-time
-      if (!enableRealTime || !isConnected) {
-        const result = await speechApiService.transcribeAudio(audioBlob, {
-          language,
-          enableAnalysis
-        })
-        
-        handleTranscription(result.transcription)
-        
-        if (result.analysis) {
-          handleAnalysis(result.analysis)
-        }
+      if (!isListening) {
+        logger.warn('Not currently listening')
+        return
+      }
+
+      if (enableRealTime && wsRef.current) {
+        await speechApiService.stopRealTimeTranscription(wsRef.current)
+        wsRef.current = null
+      } else if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        mediaRecorderRef.current.stop()
+      }
+
+      // Stop audio stream
+      if (audioStreamRef.current) {
+        audioStreamRef.current.getTracks().forEach(track => track.stop())
+        audioStreamRef.current = null
       }
 
       setIsListening(false)
       setIsPaused(false)
+      setIsConnected(false)
+      onConnectionChange?.(false)
+
       logger.info('Stopped listening')
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Failed to stop listening')
-      handleError(error)
+      logger.error('Failed to stop listening:', error)
+      setError(error.message)
+      onError?.(error)
     }
-  }, [isListening, enableRealTime, isConnected, language, enableAnalysis, handleTranscription, handleAnalysis, handleError])
+  }, [isListening, enableRealTime, onError, onConnectionChange])
 
   // Pause listening
   const pauseListening = useCallback(() => {
-    if (!isListening || isPaused) return
-    
-    setIsPaused(true)
-    logger.info('Paused listening')
+    if (isListening && !isPaused) {
+      setIsPaused(true)
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        mediaRecorderRef.current.pause()
+      }
+      logger.info('Paused listening')
+    }
   }, [isListening, isPaused])
 
   // Resume listening
   const resumeListening = useCallback(() => {
-    if (!isListening || !isPaused) return
-    
-    setIsPaused(false)
-    logger.info('Resumed listening')
+    if (isListening && isPaused) {
+      setIsPaused(false)
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'paused') {
+        mediaRecorderRef.current.resume()
+      }
+      logger.info('Resumed listening')
+    }
   }, [isListening, isPaused])
 
-  // Reset everything
-  const reset = useCallback(() => {
-    processorRef.current.clear()
+  // Clear transcript
+  const clearTranscript = useCallback(() => {
     setTranscript('')
     setInterimTranscript('')
+    setSegments([])
+    setProcessedTranscription(null)
     setConfidence(0)
     setError(null)
-    setAudioQuality(null)
-    setProcessedTranscription(null)
-    setSegments([])
-    setIsListening(false)
-    setIsPaused(false)
-    startTimeRef.current = 0
     statsRef.current = {
       totalDuration: 0,
       wordCount: 0,
       segmentCount: 0,
       averageConfidence: 0
     }
-    logger.info('Reset speech recognition')
+    logger.info('Cleared transcript')
   }, [])
 
+  // Reset method for compatibility
+  const reset = useCallback(() => {
+    clearTranscript()
+  }, [clearTranscript])
+
   // Upload audio file
-  const uploadAudioFile = useCallback(async (file: File) => {
-    setError(null)
-    setIsConnecting(true)
-
+  const uploadAudioFile = useCallback(async (file: File): Promise<SpeechTranscriptionResponse> => {
     try {
-      const result = await speechApiService.uploadAudioFile(file, {
-        language,
-        enableAnalysis
-      })
-
-      handleTranscription(result.transcription)
+      setError(null)
+      logger.info('Uploading audio file:', { fileName: file.name, fileSize: file.size })
       
-      if (result.analysis) {
-        handleAnalysis(result.analysis)
+      const result = await speechApiService.uploadAudioFile(file, language)
+      handleTranscription(result)
+      
+      return result
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error('Audio upload failed')
+      logger.error('Audio upload failed:', error)
+      setError(error.message)
+      onError?.(error)
+      throw error
+    }
+  }, [language, handleTranscription, onError])
+
+  // Start real-time transcription
+  const startRealTimeTranscription = useCallback(async () => {
+    try {
+      if (!audioStreamRef.current) {
+        throw new Error('No audio stream available')
       }
 
-      logger.info('Audio file uploaded and processed successfully')
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error('Failed to upload audio file')
-      handleError(error)
-    } finally {
-      setIsConnecting(false)
-    }
-  }, [language, enableAnalysis, handleTranscription, handleAnalysis, handleError])
+      const ws = await speechApiService.startRealTimeTranscription(
+        {
+          audio: new Blob(), // Empty blob for initial connection
+          language,
+          realTime: true
+        },
+        handleRealTimeEvent
+      )
 
-  // Auto-connect on mount if real-time is enabled
-  useEffect(() => {
-    if (enableRealTime && !isConnected && !isConnecting) {
-      connect()
+      wsRef.current = ws
+
+      // Set up MediaRecorder to send chunks
+      const mediaRecorder = new MediaRecorder(audioStreamRef.current, {
+        mimeType: 'audio/webm;codecs=opus',
+        audioBitsPerSecond: 128000
+      })
+
+      mediaRecorderRef.current = mediaRecorder
+
+      mediaRecorder.ondataavailable = async (event) => {
+        if (event.data.size > 0 && wsRef.current) {
+          try {
+            await speechApiService.sendAudioChunk(wsRef.current, event.data)
+          } catch (err) {
+            logger.error('Failed to send audio chunk:', err)
+          }
+        }
+      }
+
+      mediaRecorder.start(chunkSize)
+      logger.info('Started real-time transcription')
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error('Failed to start real-time transcription')
+      logger.error('Failed to start real-time transcription:', error)
+      setError(error.message)
+      onError?.(error)
+      throw error
     }
-  }, [enableRealTime, isConnected, isConnecting, connect])
+  }, [language, chunkSize, handleRealTimeEvent, onError])
+
+  // Stop real-time transcription
+  const stopRealTimeTranscription = useCallback(async () => {
+    try {
+      if (wsRef.current) {
+        await speechApiService.stopRealTimeTranscription(wsRef.current)
+        wsRef.current = null
+      }
+      logger.info('Stopped real-time transcription')
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error('Failed to stop real-time transcription')
+      logger.error('Failed to stop real-time transcription:', error)
+      setError(error.message)
+      onError?.(error)
+    }
+  }, [onError])
+
+  // Send audio chunk
+  const sendAudioChunk = useCallback(async (chunk: Blob) => {
+    try {
+      if (wsRef.current) {
+        await speechApiService.sendAudioChunk(wsRef.current, chunk)
+      }
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error('Failed to send audio chunk')
+      logger.error('Failed to send audio chunk:', error)
+      setError(error.message)
+      onError?.(error)
+    }
+  }, [onError])
+
+  // Get supported languages
+  const getSupportedLanguages = useCallback(async (): Promise<string[]> => {
+    try {
+      return await speechApiService.getSupportedLanguages()
+    } catch (err) {
+      logger.warn('Failed to get supported languages:', err)
+      return ['en-US', 'en-GB', 'es-ES', 'fr-FR', 'de-DE']
+    }
+  }, [])
+
+  // Get supported formats
+  const getSupportedFormats = useCallback(async (): Promise<string[]> => {
+    try {
+      return await speechApiService.getSupportedFormats()
+    } catch (err) {
+      logger.warn('Failed to get supported formats:', err)
+      return ['audio/webm', 'audio/wav', 'audio/mp3', 'audio/m4a']
+    }
+  }, [])
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (isListening) {
-        stopListening()
+      if (wsRef.current) {
+        wsRef.current.close()
       }
-      disconnect()
-      audioProcessor.cleanup()
+      if (audioStreamRef.current) {
+        audioStreamRef.current.getTracks().forEach(track => track.stop())
+      }
     }
-  }, [isListening, stopListening, disconnect])
-
-  // Calculate derived state
-  const isGoodQuality = audioQuality?.isGoodQuality ?? false
+  }, [])
 
   return {
     // State
@@ -344,30 +494,29 @@ export const useBackendSpeechRecognition = (
     interimTranscript,
     confidence,
     error,
-    
-    // Audio quality
     audioQuality,
-    isGoodQuality,
-    
-    // Transcription data
     processedTranscription,
     segments,
     
-    // Controls
+    // Statistics
+    stats: statsRef.current,
+    
+    // Actions
     startListening,
     stopListening,
     pauseListening,
     resumeListening,
+    clearTranscript,
     reset,
-    
-    // Connection management
-    connect,
-    disconnect,
-    
-    // File upload
     uploadAudioFile,
     
-    // Statistics
-    stats: statsRef.current
+    // Real-time features
+    startRealTimeTranscription,
+    stopRealTimeTranscription,
+    sendAudioChunk,
+    
+    // Utility functions
+    getSupportedLanguages,
+    getSupportedFormats
   }
 }

@@ -1,24 +1,36 @@
 import { API_CONFIG } from '../config/api'
 import { logger } from '../utils/logger'
 import { networkManager } from '../utils/networkUtils'
+import { authService } from './authService'
 
-export interface SpeechTranscriptionResult {
+export interface SpeechTranscriptionRequest {
+  audio: File | Blob
+  language?: string
+  model?: string
+  format?: string
+  realTime?: boolean
+}
+
+export interface SpeechTranscriptionResponse {
   transcript: string
   confidence: number
+  language: string
+  duration: number
+  segments?: TranscriptionSegment[]
   isFinal: boolean
-  alternatives?: Array<{
-    transcript: string
-    confidence: number
-  }>
   timestamp: number
 }
 
-export interface SpeechAnalysisResult {
-  fillerWords: string[]
-  speakingRate: number // words per minute
+export interface TranscriptionSegment {
+  text: string
+  startTime: number
+  endTime: number
   confidence: number
-  clarity: number
-  tone: 'positive' | 'neutral' | 'negative'
+}
+
+export interface RealTimeTranscriptionEvent {
+  type: 'partial' | 'final' | 'error'
+  data: SpeechTranscriptionResponse
 }
 
 export interface SpeechApiError extends Error {
@@ -30,219 +42,304 @@ export interface SpeechApiError extends Error {
 
 export class SpeechApiService {
   private baseURL: string
-  private wsConnection: WebSocket | null = null
-  private wsReconnectAttempts = 0
-  private maxReconnectAttempts = 5
-  private reconnectDelay = 1000
-  private isConnecting = false
+  private defaultTimeout: number = 30000 // 30 seconds
 
   constructor() {
     this.baseURL = API_CONFIG.BASE_URL
   }
 
-  private createError(
-    message: string,
-    originalError: Error,
-    status?: number,
-    retryable: boolean = true
-  ): SpeechApiError {
-    const error = new Error(message) as SpeechApiError
-    if (status !== undefined) {
-      error.status = status
-    }
-    error.retryable = retryable
-    error.userMessage = this.getUserFriendlyMessage(originalError, status)
-    return error
-  }
-
-  private getUserFriendlyMessage(error: Error, status?: number): string {
-    // Network errors
-    if (error.name === 'TypeError' && error.message.includes('fetch')) {
-      return 'Unable to connect to the speech service. Please check your internet connection and try again.'
-    }
-
-    // WebSocket errors
-    if (error.message.includes('WebSocket')) {
-      return 'Real-time transcription is temporarily unavailable. Using standard transcription instead.'
-    }
-
-    // Timeout errors
-    if (error.message.includes('timeout')) {
-      return 'Speech processing is taking longer than expected. Please try again.'
-    }
-
-    // HTTP status codes
-    if (status) {
-      switch (status) {
-        case 400:
-          return 'Invalid audio format. Please ensure your microphone is working properly.'
-        case 401:
-          return 'Authentication required for speech processing.'
-        case 403:
-          return 'Speech processing quota exceeded. Please try again later.'
-        case 413:
-          return 'Audio file too large. Please record a shorter segment.'
-        case 429:
-          return 'Too many speech requests. Please wait a moment and try again.'
-        case 500:
-          return 'Speech processing service is temporarily unavailable.'
-        case 502:
-        case 503:
-        case 504:
-          return 'Speech service is temporarily unavailable. Please try again later.'
-        default:
-          return `Speech processing error (${status}). Please try again.`
-      }
-    }
-
-    return 'Speech processing failed. Please try again.'
-  }
-
-  // WebSocket connection for real-time transcription
-  async connectWebSocket(
-    onTranscription: (result: SpeechTranscriptionResult) => void,
-    onError: (error: SpeechApiError) => void,
-    onConnectionChange: (connected: boolean) => void
-  ): Promise<void> {
-    if (this.wsConnection?.readyState === WebSocket.OPEN) {
-      logger.info('WebSocket already connected')
-      return
-    }
-
-    if (this.isConnecting) {
-      logger.info('WebSocket connection already in progress')
-      return
-    }
-
-    this.isConnecting = true
-
+  /**
+   * Transcribe audio file using backend speech-to-text API
+   */
+  async transcribeAudio(request: SpeechTranscriptionRequest): Promise<SpeechTranscriptionResponse> {
     try {
-      const wsUrl = this.baseURL.replace('http', 'ws') + API_CONFIG.ENDPOINTS.speech.transcribe
-      this.wsConnection = new WebSocket(wsUrl)
+      logger.info('Starting audio transcription', { 
+        language: request.language,
+        format: request.format,
+        realTime: request.realTime 
+      })
 
-      this.wsConnection.onopen = () => {
-        logger.info('WebSocket connected for real-time transcription')
-        this.wsReconnectAttempts = 0
-        this.isConnecting = false
-        onConnectionChange(true)
+      // Check network status
+      if (!networkManager.isOnline()) {
+        throw this.createSpeechError(
+          'No internet connection available',
+          new Error('Offline'),
+          undefined,
+          true
+        )
       }
 
-      this.wsConnection.onmessage = (event) => {
+      const formData = new FormData()
+      formData.append('audio', request.audio)
+      
+      if (request.language) {
+        formData.append('language', request.language)
+      }
+      if (request.model) {
+        formData.append('model', request.model)
+      }
+      if (request.format) {
+        formData.append('format', request.format)
+      }
+      if (request.realTime !== undefined) {
+        formData.append('realTime', request.realTime.toString())
+      }
+
+      const response = await this.makeRequest('/api/speech/transcribe', formData, 'POST', {
+        timeout: 60000, // 60 seconds for transcription
+        requireAuth: true
+      })
+
+      logger.info('Audio transcription completed', { 
+        confidence: (response as any).confidence,
+        duration: (response as any).duration 
+      })
+
+      return response as SpeechTranscriptionResponse
+    } catch (error) {
+      logger.error('Audio transcription failed:', error)
+      throw this.handleTranscriptionError(error)
+    }
+  }
+
+  /**
+   * Start real-time transcription stream
+   */
+  async startRealTimeTranscription(
+    request: SpeechTranscriptionRequest,
+    onTranscription: (event: RealTimeTranscriptionEvent) => void
+  ): Promise<WebSocket> {
+    try {
+      logger.info('Starting real-time transcription stream')
+
+      // Check network status
+      if (!networkManager.isOnline()) {
+        throw this.createSpeechError(
+          'No internet connection available',
+          new Error('Offline'),
+          undefined,
+          true
+        )
+      }
+
+      const authHeader = authService.getAuthHeader()
+      if (!authHeader) {
+        throw this.createSpeechError(
+          'Authentication required for real-time transcription',
+          new Error('Unauthorized'),
+          401,
+          false
+        )
+      }
+
+      // Create WebSocket connection for real-time transcription
+      const wsUrl = this.baseURL.replace('http', 'ws') + '/api/speech/transcribe/stream'
+      const ws = new WebSocket(wsUrl, ['authorization', authHeader])
+
+      ws.onopen = () => {
+        logger.info('Real-time transcription WebSocket connected')
+        
+        // Send initial configuration
+        ws.send(JSON.stringify({
+          language: request.language || 'en-US',
+          model: request.model || 'default',
+          format: request.format || 'webm'
+        }))
+      }
+
+      ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data)
-          const result: SpeechTranscriptionResult = {
-            transcript: data.transcript || '',
-            confidence: data.confidence || 0,
-            isFinal: data.is_final || false,
-            alternatives: data.alternatives || [],
-            timestamp: Date.now()
-          }
-          onTranscription(result)
+          onTranscription({
+            type: data.type || 'partial',
+            data: data
+          })
         } catch (error) {
           logger.error('Failed to parse WebSocket message:', error)
-          onError(this.createError('Invalid response from speech service', error as Error))
+          onTranscription({
+            type: 'error',
+            data: {
+              transcript: '',
+              confidence: 0,
+              language: request.language || 'en-US',
+              duration: 0,
+              isFinal: false,
+              timestamp: Date.now()
+            }
+          })
         }
       }
 
-      this.wsConnection.onclose = (event) => {
-        logger.warn('WebSocket disconnected:', event.code, event.reason)
-        this.isConnecting = false
-        onConnectionChange(false)
-        
-        // Attempt to reconnect if not a normal closure
-        if (event.code !== 1000 && this.wsReconnectAttempts < this.maxReconnectAttempts) {
-          this.attemptReconnect(onTranscription, onError, onConnectionChange)
-        }
+      ws.onerror = (error) => {
+        logger.error('Real-time transcription WebSocket error:', error)
+        onTranscription({
+          type: 'error',
+          data: {
+            transcript: '',
+            confidence: 0,
+            language: request.language || 'en-US',
+            duration: 0,
+            isFinal: false,
+            timestamp: Date.now()
+          }
+        })
       }
 
-      this.wsConnection.onerror = (error) => {
-        logger.error('WebSocket error:', error)
-        this.isConnecting = false
-        onError(this.createError('WebSocket connection failed', new Error('WebSocket error')))
+      ws.onclose = (event) => {
+        logger.info('Real-time transcription WebSocket closed', { 
+          code: event.code, 
+          reason: event.reason 
+        })
       }
 
+      return ws
     } catch (error) {
-      this.isConnecting = false
-      onError(this.createError('Failed to connect to speech service', error as Error))
+      logger.error('Failed to start real-time transcription:', error)
+      throw this.handleTranscriptionError(error)
     }
   }
 
-  private attemptReconnect(
-    onTranscription: (result: SpeechTranscriptionResult) => void,
-    onError: (error: SpeechApiError) => void,
-    onConnectionChange: (connected: boolean) => void
-  ): void {
-    this.wsReconnectAttempts++
-    const delay = this.reconnectDelay * Math.pow(2, this.wsReconnectAttempts - 1)
-    
-    logger.info(`Attempting to reconnect WebSocket in ${delay}ms (attempt ${this.wsReconnectAttempts})`)
-    
-    setTimeout(() => {
-      this.connectWebSocket(onTranscription, onError, onConnectionChange)
-    }, delay)
-  }
-
-  // Send audio data to WebSocket
-  sendAudioData(audioData: ArrayBuffer): void {
-    if (this.wsConnection?.readyState === WebSocket.OPEN) {
-      this.wsConnection.send(audioData)
-    } else {
-      logger.warn('WebSocket not connected, cannot send audio data')
+  /**
+   * Send audio chunk for real-time transcription
+   */
+  async sendAudioChunk(ws: WebSocket, audioChunk: Blob): Promise<void> {
+    try {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(audioChunk)
+      } else {
+        throw this.createSpeechError(
+          'WebSocket connection is not open',
+          new Error('Connection closed'),
+          undefined,
+          true
+        )
+      }
+    } catch (error) {
+      logger.error('Failed to send audio chunk:', error)
+      throw this.handleTranscriptionError(error)
     }
   }
 
-  // Close WebSocket connection
-  disconnectWebSocket(): void {
-    if (this.wsConnection) {
-      this.wsConnection.close(1000, 'Normal closure')
-      this.wsConnection = null
-      this.wsReconnectAttempts = 0
+  /**
+   * Stop real-time transcription
+   */
+  async stopRealTimeTranscription(ws: WebSocket): Promise<void> {
+    try {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'stop' }))
+        ws.close(1000, 'Transcription completed')
+      }
+    } catch (error) {
+      logger.error('Failed to stop real-time transcription:', error)
+      throw this.handleTranscriptionError(error)
     }
   }
 
-  // REST API for batch transcription
-  async transcribeAudio(
-    audioBlob: Blob,
+  /**
+   * Upload audio file for transcription
+   */
+  async uploadAudioFile(file: File, language?: string): Promise<SpeechTranscriptionResponse> {
+    try {
+      logger.info('Uploading audio file for transcription', { 
+        fileName: file.name,
+        fileSize: file.size,
+        language 
+      })
+
+      return await this.transcribeAudio({
+        audio: file,
+        language: language || 'en-US',
+        format: file.type,
+        realTime: false
+      })
+    } catch (error) {
+      logger.error('Audio file upload failed:', error)
+      throw this.handleTranscriptionError(error)
+    }
+  }
+
+  /**
+   * Get supported languages
+   */
+  async getSupportedLanguages(): Promise<string[]> {
+    try {
+      const response = await this.makeRequest('/api/speech/languages', {}, 'GET', {
+        requireAuth: true
+      })
+      return (response as any).languages || ['en-US', 'en-GB', 'es-ES', 'fr-FR', 'de-DE']
+    } catch (error) {
+      logger.warn('Failed to get supported languages, using defaults:', error)
+      return ['en-US', 'en-GB', 'es-ES', 'fr-FR', 'de-DE']
+    }
+  }
+
+  /**
+   * Get supported audio formats
+   */
+  async getSupportedFormats(): Promise<string[]> {
+    try {
+      const response = await this.makeRequest('/api/speech/formats', {}, 'GET', {
+        requireAuth: true
+      })
+      return (response as any).formats || ['audio/webm', 'audio/wav', 'audio/mp3', 'audio/m4a']
+    } catch (error) {
+      logger.warn('Failed to get supported formats, using defaults:', error)
+      return ['audio/webm', 'audio/wav', 'audio/mp3', 'audio/m4a']
+    }
+  }
+
+  /**
+   * Make HTTP request to backend
+   */
+  private async makeRequest<T>(
+    endpoint: string,
+    data: FormData | Record<string, any>,
+    method: 'GET' | 'POST' = 'POST',
     options: {
-      language?: string
-      sampleRate?: number
-      format?: string
-      enableAnalysis?: boolean
+      timeout?: number
+      requireAuth?: boolean
     } = {}
-  ): Promise<{
-    transcription: SpeechTranscriptionResult
-    analysis?: SpeechAnalysisResult
-  }> {
-    const { language = 'en-US', sampleRate = 44100, format = 'webm', enableAnalysis = true } = options
+  ): Promise<T> {
+    const { timeout = this.defaultTimeout, requireAuth = true } = options
 
-    // Check network status
-    if (!networkManager.isOnline()) {
-      throw this.createError(
-        'No internet connection available',
-        new Error('Offline'),
-        undefined,
-        true
-      )
-    }
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), timeout)
 
     try {
-      const formData = new FormData()
-      formData.append('audio', audioBlob, `recording.${format}`)
-      formData.append('language', language)
-      formData.append('sample_rate', sampleRate.toString())
-      formData.append('enable_analysis', enableAnalysis.toString())
+      const headers: Record<string, string> = {}
 
-      const response = await fetch(`${this.baseURL}${API_CONFIG.ENDPOINTS.speech.transcribe}`, {
-        method: 'POST',
-        body: formData,
-        headers: {
-          // Don't set Content-Type, let browser set it with boundary
+      if (requireAuth) {
+        const authHeader = authService.getAuthHeader()
+        if (authHeader) {
+          headers['Authorization'] = authHeader
         }
-      })
+      }
+
+      // Don't set Content-Type for FormData - let browser set it with boundary
+      if (!(data instanceof FormData)) {
+        headers['Content-Type'] = 'application/json'
+      }
+
+      const requestOptions: RequestInit = {
+        method,
+        headers,
+        signal: controller.signal
+      }
+
+      if (method !== 'GET' && data) {
+        if (data instanceof FormData) {
+          requestOptions.body = data
+        } else {
+          requestOptions.body = JSON.stringify(data)
+        }
+      }
+
+      const response = await fetch(`${this.baseURL}${endpoint}`, requestOptions)
+      clearTimeout(timeoutId)
 
       if (!response.ok) {
         const errorText = await response.text()
-        throw this.createError(
+        throw this.createSpeechError(
           `HTTP ${response.status}: ${errorText || response.statusText}`,
           new Error(errorText || response.statusText),
           response.status,
@@ -250,119 +347,119 @@ export class SpeechApiService {
         )
       }
 
-      const data = await response.json()
-      
-      const transcription: SpeechTranscriptionResult = {
-        transcript: data.transcript || '',
-        confidence: data.confidence || 0,
-        isFinal: true,
-        alternatives: data.alternatives || [],
-        timestamp: Date.now()
-      }
-
-      const analysis: SpeechAnalysisResult | undefined = data.analysis ? {
-        fillerWords: data.analysis.filler_words || [],
-        speakingRate: data.analysis.speaking_rate || 0,
-        confidence: data.analysis.confidence || 0,
-        clarity: data.analysis.clarity || 0,
-        tone: data.analysis.tone || 'neutral'
-      } : undefined
-
-      logger.info('Audio transcription completed successfully')
-      return { transcription, analysis }
-
+      return await response.json()
     } catch (error) {
-      logger.error('Audio transcription failed:', error)
-      throw error instanceof SpeechApiError ? error : this.createError(
-        'Failed to transcribe audio',
-        error as Error
-      )
-    }
-  }
-
-  // Upload audio file for processing
-  async uploadAudioFile(
-    file: File,
-    options: {
-      language?: string
-      enableAnalysis?: boolean
-    } = {}
-  ): Promise<{
-    transcription: SpeechTranscriptionResult
-    analysis?: SpeechAnalysisResult
-  }> {
-    const { language = 'en-US', enableAnalysis = true } = options
-
-    // Validate file type
-    const allowedTypes = ['audio/webm', 'audio/wav', 'audio/mp3', 'audio/m4a']
-    if (!allowedTypes.includes(file.type)) {
-      throw this.createError(
-        'Unsupported audio format',
-        new Error(`File type ${file.type} not supported`),
-        400,
-        false
-      )
-    }
-
-    // Validate file size (max 25MB)
-    const maxSize = 25 * 1024 * 1024
-    if (file.size > maxSize) {
-      throw this.createError(
-        'Audio file too large',
-        new Error(`File size ${file.size} exceeds limit`),
-        413,
-        false
-      )
-    }
-
-    return this.transcribeAudio(file, { language, enableAnalysis })
-  }
-
-  // Health check for speech service
-  async healthCheck(): Promise<{ status: string; timestamp: string }> {
-    try {
-      const response = await fetch(`${this.baseURL}${API_CONFIG.ENDPOINTS.speech.transcribe}/health`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      })
-
-      if (!response.ok) {
-        throw this.createError(
-          `Health check failed: ${response.status}`,
-          new Error(`HTTP ${response.status}`),
-          response.status
+      clearTimeout(timeoutId)
+      
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw this.createSpeechError(
+          'Request timeout - please try again',
+          error,
+          undefined,
+          true
         )
       }
-
-      const data = await response.json()
-      return {
-        status: data.status || 'unknown',
-        timestamp: new Date().toISOString()
-      }
-    } catch (error) {
-      logger.error('Speech service health check failed:', error)
-      throw error instanceof SpeechApiError ? error : this.createError(
-        'Speech service health check failed',
-        error as Error
-      )
+      
+      throw this.handleTranscriptionError(error)
     }
   }
 
-  // Get connection status
-  getConnectionStatus(): {
-    connected: boolean
-    connecting: boolean
-    reconnectAttempts: number
-  } {
-    return {
-      connected: this.wsConnection?.readyState === WebSocket.OPEN,
-      connecting: this.isConnecting,
-      reconnectAttempts: this.wsReconnectAttempts
+  /**
+   * Create speech API error
+   */
+  private createSpeechError(
+    message: string,
+    originalError: Error,
+    status?: number,
+    retryable: boolean = false
+  ): SpeechApiError {
+    const error = new Error(message) as SpeechApiError
+    if (status !== undefined) {
+      error.status = status
     }
+    error.retryable = retryable
+    error.userMessage = this.getUserFriendlyMessage(message, status)
+    if (originalError.stack) {
+      error.stack = originalError.stack
+    }
+    return error
+  }
+
+  /**
+   * Handle transcription errors
+   */
+  private handleTranscriptionError(error: any): SpeechApiError {
+    if (error instanceof Error && 'userMessage' in error) {
+      return error as SpeechApiError
+    }
+
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    const status = error?.status || error?.response?.status
+
+    return this.createSpeechError(
+      `Transcription failed: ${message}`,
+      error instanceof Error ? error : new Error(message),
+      status,
+      this.isRetryableError(error)
+    )
+  }
+
+  /**
+   * Check if error is retryable
+   */
+  private isRetryableError(error: any): boolean {
+    if (error?.status) {
+      return error.status >= 500 || error.status === 429
+    }
+    
+    if (error instanceof Error) {
+      return error.name === 'AbortError' || 
+             error.message.includes('timeout') ||
+             error.message.includes('network')
+    }
+    
+    return false
+  }
+
+  /**
+   * Get user-friendly error message
+   */
+  private getUserFriendlyMessage(message: string, status?: number): string {
+    if (status === 401) {
+      return 'Please log in to use speech recognition features.'
+    }
+    
+    if (status === 403) {
+      return 'You don\'t have permission to use speech recognition.'
+    }
+    
+    if (status === 413) {
+      return 'Audio file is too large. Please choose a smaller file.'
+    }
+    
+    if (status === 415) {
+      return 'Audio format not supported. Please use a different file format.'
+    }
+    
+    if (status === 429) {
+      return 'Too many requests. Please wait a moment and try again.'
+    }
+    
+    if (status && status >= 500) {
+      return 'Speech recognition service is temporarily unavailable. Please try again later.'
+    }
+    
+    if (message.includes('timeout')) {
+      return 'Request timed out. Please try again.'
+    }
+    
+    if (message.includes('network') || message.includes('fetch')) {
+      return 'Network error. Please check your connection and try again.'
+    }
+    
+    return 'Speech recognition failed. Please try again.'
   }
 }
 
-// Create a singleton instance
+// Create singleton instance
 export const speechApiService = new SpeechApiService()

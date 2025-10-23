@@ -14,6 +14,24 @@ interface AnalyzeAnswerRequest {
   answer: string
 }
 
+interface SpeechTranscriptionRequest {
+  audio: File | Blob
+  language?: string
+  model?: string
+  format?: string
+  realTime?: boolean
+}
+
+interface SpeechTranscriptionResponse {
+  transcript: string
+  confidence: number
+  language: string
+  duration: number
+  segments?: any[]
+  isFinal: boolean
+  timestamp: number
+}
+
 export interface ApiError extends Error {
   status?: number
   code?: string
@@ -261,6 +279,100 @@ export class ApiService {
       'health check',
       { timeout: 5000, retries: 1 }
     )
+  }
+
+  // Speech API methods
+  async transcribeAudio(request: SpeechTranscriptionRequest): Promise<SpeechTranscriptionResponse> {
+    try {
+      logger.info('Starting audio transcription', { 
+        language: request.language,
+        format: request.format,
+        realTime: request.realTime 
+      })
+
+      const formData = new FormData()
+      formData.append('audio', request.audio)
+      
+      if (request.language) {
+        formData.append('language', request.language)
+      }
+      if (request.model) {
+        formData.append('model', request.model)
+      }
+      if (request.format) {
+        formData.append('format', request.format)
+      }
+      if (request.realTime !== undefined) {
+        formData.append('realTime', request.realTime.toString())
+      }
+
+      const response = await this.makeRequest<SpeechTranscriptionResponse>(
+        '/api/speech/transcribe',
+        formData,
+        'transcribe audio',
+        { timeout: 60000, retries: 2 }
+      )
+
+      logger.info('Audio transcription completed', { 
+        confidence: response.confidence,
+        duration: response.duration 
+      })
+
+      return response
+    } catch (error) {
+      logger.error('Audio transcription failed:', error)
+      throw error
+    }
+  }
+
+  async uploadAudioFile(file: File, language?: string): Promise<SpeechTranscriptionResponse> {
+    try {
+      logger.info('Uploading audio file for transcription', { 
+        fileName: file.name,
+        fileSize: file.size,
+        language 
+      })
+
+      return await this.transcribeAudio({
+        audio: file,
+        language: language || 'en-US',
+        format: file.type,
+        realTime: false
+      })
+    } catch (error) {
+      logger.error('Audio file upload failed:', error)
+      throw error
+    }
+  }
+
+  async getSupportedLanguages(): Promise<string[]> {
+    try {
+      const response = await this.makeRequest<{ languages: string[] }>(
+        '/api/speech/languages',
+        {},
+        'get supported languages',
+        { timeout: 10000, retries: 1 }
+      )
+      return response.languages || ['en-US', 'en-GB', 'es-ES', 'fr-FR', 'de-DE']
+    } catch (error) {
+      logger.warn('Failed to get supported languages, using defaults:', error)
+      return ['en-US', 'en-GB', 'es-ES', 'fr-FR', 'de-DE']
+    }
+  }
+
+  async getSupportedFormats(): Promise<string[]> {
+    try {
+      const response = await this.makeRequest<{ formats: string[] }>(
+        '/api/speech/formats',
+        {},
+        'get supported formats',
+        { timeout: 10000, retries: 1 }
+      )
+      return response.formats || ['audio/webm', 'audio/wav', 'audio/mp3', 'audio/m4a']
+    } catch (error) {
+      logger.warn('Failed to get supported formats, using defaults:', error)
+      return ['audio/webm', 'audio/wav', 'audio/mp3', 'audio/m4a']
+    }
   }
 }
 

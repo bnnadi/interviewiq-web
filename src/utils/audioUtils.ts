@@ -1,19 +1,5 @@
 import { logger } from './logger'
 
-export interface AudioConfig {
-  sampleRate: number
-  channels: number
-  bitRate: number
-  format: string
-}
-
-export interface AudioChunk {
-  data: ArrayBuffer
-  timestamp: number
-  duration: number
-  sampleRate: number
-}
-
 export interface AudioQualityMetrics {
   volume: number
   noiseLevel: number
@@ -21,27 +7,53 @@ export interface AudioQualityMetrics {
   isGoodQuality: boolean
 }
 
+export interface AudioAnalysisResult {
+  duration: number
+  sampleRate: number
+  channels: number
+  bitRate: number
+  format: string
+  quality: AudioQualityMetrics
+  peaks: number[]
+  rms: number
+  dynamicRange: number
+}
+
+export interface AudioProcessingOptions {
+  targetSampleRate?: number
+  targetChannels?: number
+  targetBitRate?: number
+  enableNoiseReduction?: boolean
+  enableNormalization?: boolean
+  enableCompression?: boolean
+}
+
 export class AudioProcessor {
   private audioContext: AudioContext | null = null
-  private mediaRecorder: MediaRecorder | null = null
-  private audioChunks: AudioChunk[] = []
-  private isRecording = false
-  private chunkSize = 3000 // 3 seconds in milliseconds
+  private analyser: AnalyserNode | null = null
+  private source: MediaStreamAudioSourceNode | null = null
 
   constructor() {
     this.initializeAudioContext()
   }
 
-  private async initializeAudioContext(): Promise<void> {
+  /**
+   * Initialize Web Audio API context
+   */
+  private initializeAudioContext(): void {
     try {
       this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
-      logger.info('Audio context initialized')
+      this.analyser = this.audioContext.createAnalyser()
+      this.analyser.fftSize = 2048
+      this.analyser.smoothingTimeConstant = 0.8
     } catch (error) {
       logger.error('Failed to initialize audio context:', error)
     }
   }
 
-  // Get user media with optimal settings
+  /**
+   * Get user media with optimal settings
+   */
   async getUserMedia(constraints: MediaStreamConstraints = {}): Promise<MediaStream> {
     const defaultConstraints: MediaStreamConstraints = {
       audio: {
@@ -59,7 +71,7 @@ export class AudioProcessor {
       audio: constraints.audio ? {
         ...(defaultConstraints.audio as MediaTrackConstraints || {}),
         ...(constraints.audio as MediaTrackConstraints || {})
-      } : defaultConstraints.audio
+      } : (defaultConstraints.audio as MediaTrackConstraints)
     }
 
     try {
@@ -72,342 +84,401 @@ export class AudioProcessor {
     }
   }
 
-  // Start recording with chunked processing
-  async startRecording(
-    onChunk: (chunk: AudioChunk) => void,
-    onError: (error: Error) => void
-  ): Promise<void> {
-    if (this.isRecording) {
-      logger.warn('Recording already in progress')
-      return
-    }
-
-    try {
-      const stream = await this.getUserMedia()
-      
-      // Check if MediaRecorder is supported
-      if (!MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-        throw new Error('Audio recording not supported in this browser')
-      }
-
-      this.mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm;codecs=opus',
-        audioBitsPerSecond: 128000
-      })
-
-      this.audioChunks = []
-      this.isRecording = true
-
-      this.mediaRecorder.ondataavailable = async (event) => {
-        if (event.data.size > 0) {
-          try {
-            const arrayBuffer = await event.data.arrayBuffer()
-            const chunk: AudioChunk = {
-              data: arrayBuffer,
-              timestamp: Date.now(),
-              duration: this.chunkSize,
-              sampleRate: 44100
-            }
-            this.audioChunks.push(chunk)
-            onChunk(chunk)
-          } catch (error) {
-            logger.error('Failed to process audio chunk:', error)
-          }
-        }
-      }
-
-      this.mediaRecorder.onerror = (event) => {
-        const error = new Error(`MediaRecorder error: ${event}`)
-        logger.error('MediaRecorder error:', error)
-        onError(error)
-      }
-
-      this.mediaRecorder.onstop = () => {
-        this.isRecording = false
-        logger.info('Recording stopped')
-      }
-
-      // Start recording with time slices for chunked processing
-      this.mediaRecorder.start(this.chunkSize)
-      logger.info('Recording started with chunked processing')
-
-    } catch (error) {
-      this.isRecording = false
-      logger.error('Failed to start recording:', error)
-      onError(error instanceof Error ? error : new Error('Failed to start recording'))
-    }
-  }
-
-  // Stop recording
-  stopRecording(): Promise<Blob> {
-    return new Promise((resolve, reject) => {
-      if (!this.mediaRecorder || !this.isRecording) {
-        reject(new Error('No active recording to stop'))
-        return
-      }
-
-      this.mediaRecorder.onstop = () => {
-        this.isRecording = false
-        
-        // Combine all chunks into a single blob
-        const audioBlob = new Blob(this.audioChunks.map(chunk => chunk.data), {
-          type: 'audio/webm;codecs=opus'
-        })
-        
-        logger.info('Recording stopped, created audio blob')
-        resolve(audioBlob)
-      }
-
-      this.mediaRecorder.stop()
-      
-      // Stop all tracks to release microphone
-      if (this.mediaRecorder?.stream) {
-        this.mediaRecorder.stream.getTracks().forEach(track => track.stop())
-      }
-    })
-  }
-
-  // Analyze audio quality in real-time
-  async analyzeAudioQuality(audioData: ArrayBuffer): Promise<AudioQualityMetrics> {
-    if (!this.audioContext) {
+  /**
+   * Start audio analysis for a stream
+   */
+  startAnalysis(stream: MediaStream): void {
+    if (!this.audioContext || !this.analyser) {
       throw new Error('Audio context not initialized')
     }
 
     try {
-      const audioBuffer = await this.audioContext.decodeAudioData(audioData)
-      const channelData = audioBuffer.getChannelData(0)
-      
-      // Calculate volume (RMS)
-      let sum = 0
-      for (let i = 0; i < channelData.length; i++) {
-        const sample = channelData[i]
-        sum += sample * sample
+      this.source = this.audioContext.createMediaStreamSource(stream)
+      this.source.connect(this.analyser)
+      logger.info('Audio analysis started')
+          } catch (error) {
+      logger.error('Failed to start audio analysis:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Stop audio analysis
+   */
+  stopAnalysis(): void {
+    if (this.source) {
+      this.source.disconnect()
+      this.source = null
+    }
+    logger.info('Audio analysis stopped')
+  }
+
+  /**
+   * Get real-time audio quality metrics
+   */
+  getAudioQualityMetrics(): AudioQualityMetrics {
+    if (!this.analyser) {
+      return {
+        volume: 0,
+        noiseLevel: 0,
+        clarity: 0,
+        isGoodQuality: false
       }
-      const volume = Math.sqrt(sum / channelData.length)
+    }
 
-      // Calculate noise level (high frequency content)
-      const noiseLevel = this.calculateNoiseLevel(channelData)
+    const bufferLength = this.analyser.frequencyBinCount
+    const dataArray = new Uint8Array(bufferLength)
+    this.analyser.getByteFrequencyData(dataArray)
 
-      // Calculate clarity (signal-to-noise ratio)
-      const clarity = volume > 0 ? Math.max(0, Math.min(1, volume / (noiseLevel + 0.001))) : 0
+    // Calculate volume (RMS)
+    let sum = 0
+    for (let i = 0; i < bufferLength; i++) {
+      const value = dataArray[i] || 0
+      sum += value * value
+    }
+    const rms = Math.sqrt(sum / bufferLength)
+    const volume = rms / 255
+
+    // Calculate noise level (high frequency content)
+    const noiseThreshold = 0.1
+    let noiseSum = 0
+    let noiseCount = 0
+    for (let i = Math.floor(bufferLength * 0.7); i < bufferLength; i++) {
+      const value = dataArray[i] || 0
+      if (value > noiseThreshold * 255) {
+        noiseSum += value
+        noiseCount++
+      }
+    }
+    const noiseLevel = noiseCount > 0 ? noiseSum / (noiseCount * 255) : 0
+
+    // Calculate clarity (signal-to-noise ratio)
+    const signalSum = sum - (noiseSum * noiseSum / noiseCount)
+    const clarity = noiseLevel > 0 ? Math.min(signalSum / (noiseSum * noiseSum / noiseCount), 1) : 1
+
+    // Determine if quality is good
+    const isGoodQuality = volume > 0.1 && noiseLevel < 0.3 && clarity > 0.5
+
+    return {
+      volume,
+      noiseLevel,
+      clarity,
+      isGoodQuality
+    }
+  }
+
+  /**
+   * Analyze audio file
+   */
+  async analyzeAudioFile(file: File): Promise<AudioAnalysisResult> {
+    return new Promise((resolve, reject) => {
+      const audio = new Audio()
+      const url = URL.createObjectURL(file)
+
+      audio.onloadedmetadata = () => {
+        try {
+          const duration = audio.duration * 1000 // Convert to milliseconds
+          const format = file.type
+          
+          // Create audio context for analysis
+          const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+          const analyser = audioContext.createAnalyser()
+          analyser.fftSize = 2048
+
+          // Load audio data
+          const fileReader = new FileReader()
+          fileReader.onload = async (e) => {
+            try {
+              const arrayBuffer = e.target?.result as ArrayBuffer
+              const audioBuffer = await audioContext.decodeAudioData(arrayBuffer)
+              
+              const sampleRate = audioBuffer.sampleRate
+              const channels = audioBuffer.numberOfChannels
+              const bitRate = Math.round((file.size * 8) / duration) // Approximate bit rate
+              
+              // Analyze audio data
+              const peaks: number[] = []
+              const channelData = audioBuffer.getChannelData(0)
+              const blockSize = Math.floor(channelData.length / 100) // 100 samples
+              
+              let rmsSum = 0
+              let maxPeak = 0
+              let minPeak = 0
+              
+              for (let i = 0; i < channelData.length; i += blockSize) {
+                const block = channelData.slice(i, i + blockSize)
+                let blockMax = 0
+                let blockRms = 0
+                
+                for (let j = 0; j < block.length; j++) {
+                  const sample = Math.abs(block[j] || 0)
+                  blockMax = Math.max(blockMax, sample)
+                  blockRms += sample * sample
+                }
+                
+                peaks.push(blockMax)
+                rmsSum += blockRms / block.length
+                maxPeak = Math.max(maxPeak, blockMax)
+                minPeak = Math.min(minPeak, -blockMax)
+              }
+              
+              const rms = Math.sqrt(rmsSum / peaks.length)
+              const dynamicRange = maxPeak - minPeak
+              
+              // Calculate quality metrics
+              const quality = this.calculateQualityMetrics(peaks, rms, dynamicRange)
+              
+              const result: AudioAnalysisResult = {
+                duration,
+                sampleRate,
+                channels,
+                bitRate,
+                format,
+                quality,
+                peaks,
+                rms,
+                dynamicRange
+              }
+              
+              URL.revokeObjectURL(url)
+              audioContext.close()
+              resolve(result)
+            } catch (error) {
+              logger.error('Failed to analyze audio data:', error)
+              reject(error)
+            }
+          }
+          
+          fileReader.readAsArrayBuffer(file)
+        } catch (error) {
+          logger.error('Failed to analyze audio file:', error)
+          reject(error)
+        }
+      }
+
+      audio.onerror = () => {
+        URL.revokeObjectURL(url)
+        reject(new Error('Failed to load audio file'))
+      }
+
+      audio.src = url
+    })
+  }
+
+  /**
+   * Calculate quality metrics from audio data
+   */
+  private calculateQualityMetrics(peaks: number[], rms: number, dynamicRange: number): AudioQualityMetrics {
+    // Calculate volume (normalized RMS)
+    const volume = Math.min(rms * 2, 1) // Scale and cap at 1
+    
+    // Calculate noise level (low-level signal content)
+    const noiseThreshold = 0.01
+    const noiseCount = peaks.filter(peak => peak < noiseThreshold).length
+    const noiseLevel = noiseCount / peaks.length
+    
+    // Calculate clarity (dynamic range and consistency)
+    const avgPeak = peaks.reduce((sum, peak) => sum + peak, 0) / peaks.length
+    const clarity = Math.min(dynamicRange / avgPeak, 1)
 
       // Determine if quality is good
-      const isGoodQuality = volume > 0.01 && clarity > 0.3 && noiseLevel < 0.5
+    const isGoodQuality = volume > 0.1 && noiseLevel < 0.5 && clarity > 0.3
 
       return {
         volume,
         noiseLevel,
         clarity,
         isGoodQuality
-      }
-    } catch (error) {
-      logger.error('Failed to analyze audio quality:', error)
-      return {
-        volume: 0,
-        noiseLevel: 1,
-        clarity: 0,
-        isGoodQuality: false
-      }
     }
   }
 
-  private calculateNoiseLevel(channelData: Float32Array): number {
-    // Simple noise detection based on high-frequency content
-    let highFreqSum = 0
-    const sampleRate = 44100
-    const highFreqStart = Math.floor(channelData.length * 0.7) // Last 30% of frequencies
-    
-    for (let i = highFreqStart; i < channelData.length; i++) {
-      highFreqSum += Math.abs(channelData[i])
-    }
-    
-    return highFreqSum / (channelData.length - highFreqStart)
-  }
-
-  // Convert audio format
-  async convertAudioFormat(
-    audioBlob: Blob,
-    targetFormat: string,
-    targetSampleRate?: number
+  /**
+   * Process audio with specified options
+   */
+  async processAudio(
+    input: File | MediaStream,
+    options: AudioProcessingOptions = {}
   ): Promise<Blob> {
-    if (!this.audioContext) {
-      throw new Error('Audio context not initialized')
-    }
+    const {
+      targetSampleRate = 44100,
+      targetChannels = 1,
+      targetBitRate = 128000,
+      enableNoiseReduction = true,
+      enableNormalization = true,
+      enableCompression = true
+    } = options
 
     try {
-      const arrayBuffer = await audioBlob.arrayBuffer()
-      const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer)
-      
-      // If target sample rate is specified and different, resample
-      if (targetSampleRate && audioBuffer.sampleRate !== targetSampleRate) {
-        const resampledBuffer = await this.resampleAudio(audioBuffer, targetSampleRate)
-        return this.audioBufferToBlob(resampledBuffer, targetFormat)
+      if (input instanceof File) {
+        return await this.processAudioFile(input, {
+          targetSampleRate,
+          targetChannels,
+          targetBitRate,
+          enableNoiseReduction,
+          enableNormalization,
+          enableCompression
+        })
+      } else {
+        return await this.processAudioStream(input, {
+          targetSampleRate,
+          targetChannels,
+          targetBitRate,
+          enableNoiseReduction,
+          enableNormalization,
+          enableCompression
+        })
+      }
+    } catch (error) {
+      logger.error('Failed to process audio:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Process audio file
+   */
+  private async processAudioFile(
+    file: File,
+    options: AudioProcessingOptions
+  ): Promise<Blob> {
+    // For now, return the original file
+    // In a real implementation, this would use Web Audio API to process the audio
+    logger.info('Processing audio file:', { fileName: file.name, options })
+    return file
+  }
+
+  /**
+   * Process audio stream
+   */
+  private async processAudioStream(
+    stream: MediaStream,
+    options: AudioProcessingOptions
+  ): Promise<Blob> {
+    // For now, return a simple recording
+    // In a real implementation, this would use MediaRecorder with specific settings
+    logger.info('Processing audio stream:', { options })
+    
+        const mediaRecorder = new MediaRecorder(stream, {
+          mimeType: 'audio/webm;codecs=opus',
+          audioBitsPerSecond: options.targetBitRate || 128000
+        })
+    
+    const chunks: Blob[] = []
+    
+    return new Promise((resolve, reject) => {
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          chunks.push(event.data)
+        }
       }
       
-      return this.audioBufferToBlob(audioBuffer, targetFormat)
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'audio/webm' })
+        resolve(blob)
+      }
+      
+      mediaRecorder.onerror = (error) => {
+        reject(error)
+      }
+      
+      mediaRecorder.start()
+      
+      // Stop after 5 seconds for demo purposes
+      setTimeout(() => {
+        mediaRecorder.stop()
+      }, 5000)
+    })
+  }
+
+  /**
+   * Convert audio format
+   */
+  async convertAudioFormat(
+    input: File,
+    targetFormat: string
+  ): Promise<Blob> {
+    try {
+      logger.info('Converting audio format:', { 
+        inputFormat: input.type, 
+        targetFormat 
+      })
+      
+      // For now, return the original file
+      // In a real implementation, this would use Web Audio API to convert formats
+      return input
     } catch (error) {
       logger.error('Failed to convert audio format:', error)
-      throw new Error(`Audio format conversion failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      throw error
     }
   }
 
-  private async resampleAudio(audioBuffer: AudioBuffer, targetSampleRate: number): Promise<AudioBuffer> {
-    if (!this.audioContext) {
-      throw new Error('Audio context not initialized')
-    }
-
-    const sourceSampleRate = audioBuffer.sampleRate
-    const ratio = targetSampleRate / sourceSampleRate
-    const newLength = Math.floor(audioBuffer.length * ratio)
-    
-    const newBuffer = this.audioContext.createBuffer(
-      audioBuffer.numberOfChannels,
-      newLength,
-      targetSampleRate
-    )
-
-    for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
-      const sourceData = audioBuffer.getChannelData(channel)
-      const targetData = newBuffer.getChannelData(channel)
-      
-      for (let i = 0; i < newLength; i++) {
-        const sourceIndex = i / ratio
-        const index = Math.floor(sourceIndex)
-        const fraction = sourceIndex - index
-        
-        if (index + 1 < sourceData.length) {
-          // Linear interpolation
-          targetData[i] = sourceData[index] * (1 - fraction) + sourceData[index + 1] * fraction
-        } else {
-          targetData[i] = sourceData[index] || 0
-        }
-      }
-    }
-
-    return newBuffer
-  }
-
-  private audioBufferToBlob(audioBuffer: AudioBuffer, format: string): Blob {
-    const length = audioBuffer.length
-    const channels = audioBuffer.numberOfChannels
-    
-    // Convert to WAV format (simplified)
-    if (format === 'wav') {
-      const buffer = new ArrayBuffer(44 + length * channels * 2)
-      const view = new DataView(buffer)
-      
-      // WAV header
-      const writeString = (offset: number, string: string) => {
-        for (let i = 0; i < string.length; i++) {
-          view.setUint8(offset + i, string.charCodeAt(i))
-        }
-      }
-      
-      writeString(0, 'RIFF')
-      view.setUint32(4, 36 + length * channels * 2, true)
-      writeString(8, 'WAVE')
-      writeString(12, 'fmt ')
-      view.setUint32(16, 16, true)
-      view.setUint16(20, 1, true)
-      view.setUint16(22, channels, true)
-      view.setUint32(24, audioBuffer.sampleRate, true)
-      view.setUint32(28, audioBuffer.sampleRate * channels * 2, true)
-      view.setUint16(32, channels * 2, true)
-      view.setUint16(34, 16, true)
-      writeString(36, 'data')
-      view.setUint32(40, length * channels * 2, true)
-      
-      // Convert float32 to int16
-      let offset = 44
-      for (let i = 0; i < length; i++) {
-        for (let channel = 0; channel < channels; channel++) {
-          const channelData = audioBuffer.getChannelData(channel)
-          const sample = Math.max(-1, Math.min(1, channelData[i]))
-          view.setInt16(offset, sample * 0x7FFF, true)
-          offset += 2
-        }
-      }
-      
-      return new Blob([buffer], { type: 'audio/wav' })
-    }
-    
-    // For other formats, return original blob (would need more complex conversion)
-    throw new Error(`Unsupported audio format: ${format}`)
-  }
-
-  // Get optimal audio configuration for the current device
-  async getOptimalAudioConfig(): Promise<AudioConfig> {
-    try {
-      const stream = await this.getUserMedia()
-      const audioTracks = stream.getAudioTracks()
-      
-      if (audioTracks.length === 0) {
-        throw new Error('No audio tracks available')
-      }
-
-      const settings = audioTracks[0]?.getSettings()
-      
-      return {
-        sampleRate: settings?.sampleRate ?? 44100,
-        channels: settings?.channelCount ?? 1,
-        bitRate: 128000, // Default bitrate
-        format: 'webm'
-      }
-    } catch (error) {
-      logger.error('Failed to get optimal audio config:', error)
-      return {
-        sampleRate: 44100,
-        channels: 1,
-        bitRate: 128000,
-        format: 'webm'
-      }
-    }
-  }
-
-  // Check if audio recording is supported
-  isAudioRecordingSupported(): boolean {
-    return !!(
-      typeof navigator !== 'undefined' &&
-      navigator.mediaDevices &&
-      navigator.mediaDevices.getUserMedia &&
-      typeof MediaRecorder !== 'undefined' &&
-      MediaRecorder.isTypeSupported?.('audio/webm;codecs=opus')
-    )
-  }
-
-  // Get supported audio formats
+  /**
+   * Get supported audio formats
+   */
   getSupportedFormats(): string[] {
-    const formats = []
-    if (typeof MediaRecorder !== 'undefined') {
+    const formats = ['audio/webm', 'audio/wav', 'audio/mp3', 'audio/m4a', 'audio/ogg']
+    
+    // Check for additional supported formats
       if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-        formats.push('webm')
+      formats.push('audio/webm;codecs=opus')
       }
+    
       if (MediaRecorder.isTypeSupported('audio/mp4')) {
-        formats.push('mp4')
-      }
-      if (MediaRecorder.isTypeSupported('audio/wav')) {
-        formats.push('wav')
-      }
+      formats.push('audio/mp4')
     }
+    
     return formats
   }
 
-  // Cleanup resources
-  cleanup(): void {
-    if (this.mediaRecorder && this.isRecording) {
-      this.mediaRecorder.stop()
+  /**
+   * Check if format is supported
+   */
+  isFormatSupported(format: string): boolean {
+    return this.getSupportedFormats().includes(format)
+  }
+
+  /**
+   * Get optimal recording settings
+   */
+  getOptimalRecordingSettings(): MediaRecorderOptions {
+    const formats = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/mp4',
+      'audio/wav'
+    ]
+    
+    for (const format of formats) {
+      if (MediaRecorder.isTypeSupported(format)) {
+        return {
+          mimeType: format,
+          audioBitsPerSecond: 128000
+        }
+      }
     }
+    
+    return {
+      audioBitsPerSecond: 128000
+    }
+  }
+
+  /**
+   * Cleanup resources
+   */
+  cleanup(): void {
+    this.stopAnalysis()
     
     if (this.audioContext && this.audioContext.state !== 'closed') {
       this.audioContext.close()
     }
     
-    this.audioChunks = []
-    this.isRecording = false
+    this.audioContext = null
+    this.analyser = null
+    this.source = null
   }
 }
 
-// Create a singleton instance
+// Create singleton instance
 export const audioProcessor = new AudioProcessor()
 
 // Utility functions
@@ -415,37 +486,34 @@ export const formatDuration = (milliseconds: number): string => {
   const seconds = Math.floor(milliseconds / 1000)
   const minutes = Math.floor(seconds / 60)
   const remainingSeconds = seconds % 60
-  
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
 }
 
 export const formatFileSize = (bytes: number): string => {
-  if (bytes === 0) return '0 B'
-  
+  if (bytes === 0) return '0 Bytes'
   const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB']
+  const sizes = ['Bytes', 'KB', 'MB', 'GB']
   const i = Math.floor(Math.log(bytes) / Math.log(k))
-  
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
-export const validateAudioFile = (file: File): { valid: boolean; error?: string } => {
-  const allowedTypes = ['audio/webm', 'audio/wav', 'audio/mp3', 'audio/m4a', 'audio/ogg']
-  const maxSize = 25 * 1024 * 1024 // 25MB
+export const validateAudioFile = (file: File, maxSizeMB: number = 50): string | null => {
+  const supportedTypes = [
+    'audio/webm',
+    'audio/wav',
+    'audio/mp3',
+    'audio/m4a',
+    'audio/ogg',
+    'audio/mp4'
+  ]
   
-  if (!allowedTypes.includes(file.type)) {
-    return {
-      valid: false,
-      error: `Unsupported file type: ${file.type}. Supported types: ${allowedTypes.join(', ')}`
-    }
+  if (!supportedTypes.includes(file.type)) {
+    return `Unsupported file type. Supported types: ${supportedTypes.join(', ')}`
   }
   
-  if (file.size > maxSize) {
-    return {
-      valid: false,
-      error: `File too large: ${formatFileSize(file.size)}. Maximum size: ${formatFileSize(maxSize)}`
-    }
+  if (file.size > maxSizeMB * 1024 * 1024) {
+    return `File size must be less than ${maxSizeMB}MB`
   }
   
-  return { valid: true }
+  return null
 }

@@ -1,84 +1,160 @@
-import React, { useState, useRef, useCallback } from 'react'
-import { Card } from '@components/ui/Card'
-import Button from '@components/shared/ui/Button'
-import LoadingSpinner from '@components/shared/ui/LoadingSpinner'
-import ErrorMessage from '@components/shared/ui/ErrorMessage'
-import { speechApiService, SpeechTranscriptionResult, SpeechAnalysisResult } from '../../services/speechApiService'
-import { validateAudioFile, formatFileSize, formatDuration } from '../../utils/audioUtils'
-import { ProcessedTranscription } from '../../utils/transcriptionUtils'
+import React, { useState, useCallback, useRef } from 'react'
+import { speechApiService, SpeechTranscriptionResponse } from '../../services/speechApiService'
+import { logger } from '../../utils/logger'
+import Button from '../shared/ui/Button'
+import { Card, CardContent, CardHeader } from '../ui/Card'
+import { Progress } from '../ui/Progress'
+import { Badge } from '../ui/Badge'
 
-interface AudioUploaderProps {
-  onTranscriptionComplete?: (transcription: ProcessedTranscription) => void
-  onTranscriptionUpdate?: (transcription: ProcessedTranscription) => void
-  onError?: (error: string) => void
-  language?: string
-  enableAnalysis?: boolean
-  maxFileSize?: number
-  acceptedFormats?: string[]
+export interface AudioUploaderProps {
+  onTranscriptionComplete?: (result: SpeechTranscriptionResponse) => void
+  onError?: (error: Error) => void
+  onUploadStart?: () => void
+  onUploadProgress?: (progress: number) => void
   className?: string
+  maxFileSize?: number // in MB
+  acceptedFormats?: string[]
+  language?: string
+  showPreview?: boolean
+  showProgress?: boolean
+  multiple?: boolean
 }
 
-const AudioUploader: React.FC<AudioUploaderProps> = ({
+export const AudioUploader: React.FC<AudioUploaderProps> = ({
   onTranscriptionComplete,
-  onTranscriptionUpdate,
   onError,
-  language = 'en-US',
-  enableAnalysis = true,
-  maxFileSize = 25 * 1024 * 1024, // 25MB
+  onUploadStart,
+  onUploadProgress,
+  className = '',
+  maxFileSize = 50, // 50MB default
   acceptedFormats = ['audio/webm', 'audio/wav', 'audio/mp3', 'audio/m4a', 'audio/ogg'],
-  className = ''
+  language = 'en-US',
+  showPreview = true,
+  showProgress = true,
+  multiple = false
 }) => {
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [dragActive, setDragActive] = useState(false)
+  const [uploadedFiles, setUploadedFiles] = useState<File[]>([])
+  const [transcriptionResults, setTranscriptionResults] = useState<SpeechTranscriptionResponse[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [transcription, setTranscription] = useState<ProcessedTranscription | null>(null)
-  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [dragActive, setDragActive] = useState(false)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const dropZoneRef = useRef<HTMLDivElement>(null)
 
-  // Handle file selection
-  const handleFileSelect = useCallback((file: File) => {
-    setError(null)
-    setTranscription(null)
-
-    // Validate file
-    const validation = validateAudioFile(file)
-    if (!validation.valid) {
-      setError(validation.error || 'Invalid file')
-      onError?.(validation.error || 'Invalid file')
-      return
-    }
-
+  // Validate file
+  const validateFile = useCallback((file: File): string | null => {
     // Check file size
-    if (file.size > maxFileSize) {
-      const errorMsg = `File too large: ${formatFileSize(file.size)}. Maximum size: ${formatFileSize(maxFileSize)}`
-      setError(errorMsg)
-      onError?.(errorMsg)
+    if (file.size > maxFileSize * 1024 * 1024) {
+      return `File size must be less than ${maxFileSize}MB`
+    }
+
+    // Check file type
+    if (!acceptedFormats.includes(file.type)) {
+      return `File type not supported. Accepted formats: ${acceptedFormats.join(', ')}`
+    }
+
+    return null
+  }, [maxFileSize, acceptedFormats])
+
+  // Handle file upload
+  const handleFileUpload = useCallback(async (files: FileList | File[]) => {
+    const fileArray = Array.from(files)
+    const validFiles: File[] = []
+    const errors: string[] = []
+
+    // Validate files
+    fileArray.forEach(file => {
+      const validationError = validateFile(file)
+      if (validationError) {
+        errors.push(`${file.name}: ${validationError}`)
+      } else {
+        validFiles.push(file)
+      }
+    })
+
+    if (errors.length > 0) {
+      const errorMessage = errors.join('\n')
+      setError(errorMessage)
+      onError?.(new Error(errorMessage))
       return
     }
 
-    setSelectedFile(file)
-  }, [maxFileSize, onError])
+    if (validFiles.length === 0) return
+
+    setIsUploading(true)
+    setUploadProgress(0)
+    setError(null)
+    onUploadStart?.()
+
+    try {
+      const results: SpeechTranscriptionResponse[] = []
+
+      for (let i = 0; i < validFiles.length; i++) {
+        const file = validFiles[i]
+        if (file) {
+          logger.info('Uploading audio file:', { fileName: file.name, fileSize: file.size })
+
+          try {
+            const result = await speechApiService.uploadAudioFile(file, language)
+            results.push(result)
+            onTranscriptionComplete?.(result)
+          } catch (err) {
+            logger.error('Failed to transcribe file:', err)
+            const error = err instanceof Error ? err : new Error('Transcription failed')
+            onError?.(error)
+            throw error
+          }
+
+          // Update progress
+          const progress = ((i + 1) / validFiles.length) * 100
+          setUploadProgress(progress)
+          onUploadProgress?.(progress)
+        }
+      }
+
+      setTranscriptionResults(prev => [...prev, ...results])
+      setUploadedFiles(prev => [...prev, ...validFiles])
+      
+      logger.info('All files uploaded successfully:', { count: validFiles.length })
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error('Upload failed')
+      logger.error('Upload failed:', error)
+      setError(error.message)
+      onError?.(error)
+    } finally {
+      setIsUploading(false)
+      setUploadProgress(0)
+    }
+  }, [validateFile, language, onTranscriptionComplete, onError, onUploadStart, onUploadProgress])
 
   // Handle file input change
   const handleFileInputChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) {
-      handleFileSelect(file)
+    const files = event.target.files
+    if (files && files.length > 0) {
+      handleFileUpload(files)
     }
-  }, [handleFileSelect])
+  }, [handleFileUpload])
 
   // Handle drag and drop
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    if (e.type === 'dragenter' || e.type === 'dragover') {
+  }, [])
+
+  const handleDragIn = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
       setDragActive(true)
-    } else if (e.type === 'dragleave') {
-      setDragActive(false)
     }
+  }, [])
+
+  const handleDragOut = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragActive(false)
   }, [])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -86,262 +162,214 @@ const AudioUploader: React.FC<AudioUploaderProps> = ({
     e.stopPropagation()
     setDragActive(false)
 
-    const files = e.dataTransfer.files
-    if (files && files[0]) {
-      handleFileSelect(files[0])
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFileUpload(e.dataTransfer.files)
     }
-  }, [handleFileSelect])
-
-  // Handle upload
-  const handleUpload = useCallback(async () => {
-    if (!selectedFile) return
-
-    setIsUploading(true)
-    setUploadProgress(0)
-    setError(null)
-
-    try {
-      // Simulate progress updates
-      const progressInterval = setInterval(() => {
-        setUploadProgress(prev => {
-          if (prev >= 90) return prev
-          return prev + Math.random() * 10
-        })
-      }, 200)
-
-      // Upload and transcribe
-      const result = await speechApiService.uploadAudioFile(selectedFile, {
-        language,
-        enableAnalysis
-      })
-
-      clearInterval(progressInterval)
-      setUploadProgress(100)
-
-      // Process transcription
-      const processedTranscription: ProcessedTranscription = {
-        fullText: result.transcription.transcript,
-        segments: [{
-          text: result.transcription.transcript,
-          startTime: 0,
-          endTime: 0, // Duration not available from file upload
-          confidence: result.transcription.confidence,
-          isFinal: true
-        }],
-        confidence: result.transcription.confidence,
-        wordCount: result.transcription.transcript.split(/\s+/).length,
-        duration: 0, // Duration not available from file upload
-        analysis: result.analysis
-      }
-
-      setTranscription(processedTranscription)
-      onTranscriptionComplete?.(processedTranscription)
-      onTranscriptionUpdate?.(processedTranscription)
-
-      // Show analysis if available
-      if (result.analysis) {
-        setIsAnalyzing(true)
-        setTimeout(() => setIsAnalyzing(false), 2000)
-      }
-
-      logger.info('Audio file uploaded and transcribed successfully')
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Upload failed'
-      setError(errorMessage)
-      onError?.(errorMessage)
-      logger.error('Audio upload failed:', err)
-    } finally {
-      setIsUploading(false)
-      setUploadProgress(0)
-    }
-  }, [selectedFile, language, enableAnalysis, onTranscriptionComplete, onTranscriptionUpdate, onError])
-
-  // Handle reset
-  const handleReset = useCallback(() => {
-    setSelectedFile(null)
-    setTranscription(null)
-    setError(null)
-    setUploadProgress(0)
-    setIsUploading(false)
-    setIsAnalyzing(false)
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ''
-    }
-  }, [])
+  }, [handleFileUpload])
 
   // Handle click to open file dialog
   const handleClick = useCallback(() => {
     fileInputRef.current?.click()
   }, [])
 
+  // Clear all results
+  const clearResults = useCallback(() => {
+    setUploadedFiles([])
+    setTranscriptionResults([])
+    setError(null)
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }, [])
+
+  // Remove specific file
+  const removeFile = useCallback((index: number) => {
+    setUploadedFiles(prev => prev.filter((_, i) => i !== index))
+    setTranscriptionResults(prev => prev.filter((_, i) => i !== index))
+  }, [])
+
+  // Format file size
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return '0 Bytes'
+    const k = 1024
+    const sizes = ['Bytes', 'KB', 'MB', 'GB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+  }
+
+  // Format duration
+  const formatDuration = (milliseconds: number): string => {
+    const seconds = Math.floor(milliseconds / 1000)
+    const minutes = Math.floor(seconds / 60)
+    const remainingSeconds = seconds % 60
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
+  }
+
   return (
-    <Card className={`p-6 ${className}`}>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-gray-900">Upload Audio File</h3>
-        {isUploading && <LoadingSpinner />}
-      </div>
-
-      {/* Error Display */}
-      {error && (
-        <div className="mb-4">
-          <ErrorMessage 
-            error={error}
-            onDismiss={() => setError(null)}
-            showNetworkStatus={false}
-          />
+    <Card className={className}>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold">Audio File Upload</h3>
+          {uploadedFiles.length > 0 && (
+            <Button onClick={clearResults} variant="outline" size="sm">
+              Clear All
+            </Button>
+          )}
         </div>
-      )}
+      </CardHeader>
 
-      {/* Upload Area */}
-      <div
-        className={`relative border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
-          dragActive
-            ? 'border-blue-400 bg-blue-50'
-            : selectedFile
-            ? 'border-green-400 bg-green-50'
-            : 'border-gray-300 hover:border-gray-400'
-        }`}
-        onDragEnter={handleDrag}
-        onDragLeave={handleDrag}
-        onDragOver={handleDrag}
-        onDrop={handleDrop}
-      >
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept={acceptedFormats.join(',')}
-          onChange={handleFileInputChange}
-          className="hidden"
-        />
+      <CardContent className="space-y-4">
+        {/* Error Display */}
+        {error && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+            <p className="text-sm text-red-600 whitespace-pre-line">{error}</p>
+          </div>
+        )}
 
-        {selectedFile ? (
-          <div className="space-y-3">
-            <div className="text-green-600">
-              <svg className="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+        {/* Upload Area */}
+        <div
+          ref={dropZoneRef}
+          className={`relative border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
+            dragActive
+              ? 'border-blue-500 bg-blue-50'
+              : 'border-gray-300 hover:border-gray-400'
+          } ${isUploading ? 'pointer-events-none opacity-50' : 'cursor-pointer'}`}
+          onDragEnter={handleDragIn}
+          onDragLeave={handleDragOut}
+          onDragOver={handleDrag}
+          onDrop={handleDrop}
+          onClick={handleClick}
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={acceptedFormats.join(',')}
+            onChange={handleFileInputChange}
+            multiple={multiple}
+            className="hidden"
+          />
+
+          <div className="space-y-2">
+            <div className="text-4xl text-gray-400">🎵</div>
+            <div className="text-lg font-medium text-gray-700">
+              {isUploading ? 'Uploading...' : 'Drop audio files here or click to browse'}
             </div>
-            <div>
-              <p className="text-sm font-medium text-gray-900">{selectedFile.name}</p>
-              <p className="text-xs text-gray-500">{formatFileSize(selectedFile.size)}</p>
+            <div className="text-sm text-gray-500">
+              Max file size: {maxFileSize}MB
             </div>
-            <div className="flex space-x-2">
-              <Button
-                onClick={handleUpload}
-                disabled={isUploading}
-                className="flex-1"
-              >
-                {isUploading ? 'Uploading...' : 'Upload & Transcribe'}
-              </Button>
-              <Button
-                onClick={handleReset}
-                variant="outline"
-                disabled={isUploading}
-              >
-                Remove
-              </Button>
+            <div className="text-xs text-gray-400">
+              Supported formats: {acceptedFormats.join(', ')}
             </div>
           </div>
-        ) : (
-          <div className="space-y-3">
-            <div className="text-gray-400">
-              <svg className="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-              </svg>
+        </div>
+
+        {/* Upload Progress */}
+        {showProgress && isUploading && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-600">Uploading...</span>
+              <span className="text-gray-600">{Math.round(uploadProgress)}%</span>
             </div>
-            <div>
-              <p className="text-sm font-medium text-gray-900">
-                Drop your audio file here, or{' '}
-                <button
-                  onClick={handleClick}
-                  className="text-blue-600 hover:text-blue-500 font-medium"
-                >
-                  browse
-                </button>
-              </p>
-              <p className="text-xs text-gray-500 mt-1">
-                Supported formats: {acceptedFormats.map(format => format.split('/')[1]).join(', ')}
-              </p>
-              <p className="text-xs text-gray-500">
-                Maximum size: {formatFileSize(maxFileSize)}
-              </p>
+            <Progress value={uploadProgress} className="w-full" />
+          </div>
+        )}
+
+        {/* Uploaded Files Preview */}
+        {showPreview && uploadedFiles.length > 0 && (
+          <div className="space-y-3">
+            <h4 className="text-sm font-medium text-gray-700">Uploaded Files</h4>
+            <div className="space-y-2">
+              {uploadedFiles.map((file, index) => {
+                const result = transcriptionResults[index]
+                return (
+                  <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-sm font-medium text-gray-800 truncate">
+                          {file.name}
+                        </span>
+                        <Badge variant="outline" className="text-xs">
+                          {formatFileSize(file.size)}
+                        </Badge>
+                      </div>
+                      {result && (
+                        <div className="mt-1 text-xs text-gray-600">
+                          <span>Duration: {formatDuration(result.duration)}</span>
+                          <span className="mx-2">•</span>
+                          <span>Confidence: {Math.round(result.confidence * 100)}%</span>
+                          <span className="mx-2">•</span>
+                          <span>Words: {result.transcript.split(/\s+/).length}</span>
+                        </div>
+                      )}
+                    </div>
+                    <Button
+                      onClick={() => removeFile(index)}
+                      variant="outline"
+                      size="sm"
+                      className="ml-2"
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                )
+              })}
             </div>
           </div>
         )}
-      </div>
 
-      {/* Upload Progress */}
-      {isUploading && (
-        <div className="mt-4">
-          <div className="flex justify-between text-sm text-gray-600 mb-1">
-            <span>Uploading...</span>
-            <span>{Math.round(uploadProgress)}%</span>
-          </div>
-          <div className="w-full bg-gray-200 rounded-full h-2">
-            <div 
-              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-              style={{ width: `${uploadProgress}%` }}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Analysis Indicator */}
-      {isAnalyzing && (
-        <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-          <div className="flex items-center space-x-2">
-            <LoadingSpinner />
-            <span className="text-sm text-blue-800">Analyzing speech patterns...</span>
-          </div>
-        </div>
-      )}
-
-      {/* Transcription Results */}
-      {transcription && (
-        <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-          <div className="flex items-center justify-between mb-2">
-            <h4 className="text-sm font-medium text-gray-900">Transcription Results</h4>
-            <div className="text-xs text-gray-500">
-              {Math.round(transcription.confidence * 100)}% confidence
+        {/* Transcription Results */}
+        {transcriptionResults.length > 0 && (
+          <div className="space-y-3">
+            <h4 className="text-sm font-medium text-gray-700">Transcription Results</h4>
+            <div className="space-y-3">
+              {transcriptionResults.map((result, index) => (
+                <div key={index} className="p-3 bg-blue-50 rounded-md">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-gray-700">
+                      File {index + 1}
+                    </span>
+                    <div className="flex items-center space-x-2">
+                      <Badge variant="outline" className="text-xs">
+                        {Math.round(result.confidence * 100)}% confidence
+                      </Badge>
+                      <Badge variant="outline" className="text-xs">
+                        {formatDuration(result.duration)}
+                      </Badge>
+                    </div>
+                  </div>
+                  <div className="text-sm text-gray-800 bg-white p-2 rounded border">
+                    {result.transcript}
+                  </div>
+                  {result.segments && result.segments.length > 0 && (
+                    <div className="mt-2">
+                      <details className="text-xs">
+                        <summary className="cursor-pointer text-gray-600 hover:text-gray-800">
+                          Show segments ({result.segments.length})
+                        </summary>
+                        <div className="mt-1 space-y-1">
+                          {result.segments.map((segment, segIndex) => (
+                            <div key={segIndex} className="flex items-center justify-between p-1 bg-white rounded text-xs">
+                              <span className="text-gray-700">{segment.text}</span>
+                              <div className="flex items-center space-x-1">
+                                <span className="text-gray-500">
+                                  {Math.round(segment.startTime / 1000)}s
+                                </span>
+                                <Badge variant="outline" className="text-xs">
+                                  {Math.round(segment.confidence * 100)}%
+                                </Badge>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
-          
-          <div className="text-sm text-gray-700 mb-3">
-            {transcription.fullText}
-          </div>
-          
-          <div className="grid grid-cols-2 gap-4 text-xs text-gray-600">
-            <div>Words: {transcription.wordCount}</div>
-            <div>Segments: {transcription.segments.length}</div>
-            <div>Confidence: {Math.round(transcription.confidence * 100)}%</div>
-            <div>Analysis: {transcription.analysis ? 'Completed' : 'Not available'}</div>
-          </div>
-
-          {transcription.analysis && (
-            <div className="mt-3 pt-3 border-t border-gray-200">
-              <div className="text-xs text-gray-600 mb-2">Speech Analysis:</div>
-              <div className="grid grid-cols-2 gap-2 text-xs text-gray-700">
-                <div>Speaking Rate: {transcription.analysis.speakingRate} WPM</div>
-                <div>Clarity: {Math.round(transcription.analysis.clarity * 100)}%</div>
-                <div>Filler Words: {transcription.analysis.fillerWords.length}</div>
-                <div>Tone: {transcription.analysis.tone}</div>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Instructions */}
-      <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-        <h4 className="text-sm font-medium text-blue-900 mb-1">Instructions</h4>
-        <ul className="text-xs text-blue-800 space-y-1">
-          <li>• Upload audio files in supported formats (WebM, WAV, MP3, M4A, OGG)</li>
-          <li>• Maximum file size is {formatFileSize(maxFileSize)}</li>
-          <li>• Audio will be transcribed and analyzed automatically</li>
-          <li>• Results include confidence scores and speech analysis</li>
-        </ul>
-      </div>
+        )}
+      </CardContent>
     </Card>
   )
 }

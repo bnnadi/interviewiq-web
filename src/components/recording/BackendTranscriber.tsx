@@ -1,33 +1,40 @@
-import React, { useState, useEffect } from 'react'
-import { Card } from '@components/ui/Card'
-import Button from '@components/shared/ui/Button'
-import LoadingSpinner from '@components/shared/ui/LoadingSpinner'
-import ErrorMessage from '@components/shared/ui/ErrorMessage'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useBackendSpeechRecognition } from '../../hooks/useBackendSpeechRecognition'
-import { ProcessedTranscription, TranscriptionSegment } from '../../utils/transcriptionUtils'
-import { formatDuration } from '../../utils/audioUtils'
+import { SpeechTranscriptionResponse } from '../../services/speechApiService'
+import { logger } from '../../utils/logger'
+import Button from '../shared/ui/Button'
+import { Card, CardContent, CardHeader } from '../ui/Card'
+import { Badge } from '../ui/Badge'
+// import { Progress } from '../ui/Progress' // Unused for now
 
-interface BackendTranscriberProps {
-  onTranscriptionComplete?: (transcription: ProcessedTranscription) => void
-  onTranscriptionUpdate?: (transcription: ProcessedTranscription) => void
-  onError?: (error: string) => void
+export interface BackendTranscriberProps {
   language?: string
   enableRealTime?: boolean
   enableAnalysis?: boolean
+  onTranscriptionComplete?: (result: SpeechTranscriptionResponse) => void
+  onError?: (error: Error) => void
   className?: string
+  showControls?: boolean
+  showStats?: boolean
+  showQuality?: boolean
+  autoStart?: boolean
 }
 
-const BackendTranscriber: React.FC<BackendTranscriberProps> = ({
-  onTranscriptionComplete,
-  onTranscriptionUpdate,
-  onError,
+export const BackendTranscriber: React.FC<BackendTranscriberProps> = ({
   language = 'en-US',
   enableRealTime = true,
   enableAnalysis = true,
-  className = ''
+  onTranscriptionComplete,
+  onError,
+  className = '',
+  showControls = true,
+  showStats = true,
+  showQuality = true,
+  autoStart = false
 }) => {
-  const [showSegments, setShowSegments] = useState(false)
-  const [showQuality, setShowQuality] = useState(false)
+  const [isInitialized, setIsInitialized] = useState(false)
+  const [supportedLanguages, setSupportedLanguages] = useState<string[]>([])
+  const [supportedFormats, setSupportedFormats] = useState<string[]>([])
 
   const {
     isListening,
@@ -39,309 +46,358 @@ const BackendTranscriber: React.FC<BackendTranscriberProps> = ({
     confidence,
     error,
     audioQuality,
-    isGoodQuality,
     processedTranscription,
     segments,
+    stats,
     startListening,
     stopListening,
     pauseListening,
     resumeListening,
-    reset,
-    connect,
-    disconnect,
+    clearTranscript,
     uploadAudioFile,
-    stats
+    getSupportedLanguages,
+    getSupportedFormats
   } = useBackendSpeechRecognition({
     language,
     enableRealTime,
     enableAnalysis,
-    onTranscription: onTranscriptionUpdate,
-    onError: (err) => onError?.(err.message)
-  })
-
-  // Handle transcription updates
-  useEffect(() => {
-    if (processedTranscription) {
-      onTranscriptionUpdate?.(processedTranscription)
-    }
-  }, [processedTranscription, onTranscriptionUpdate])
-
-  // Handle errors
-  useEffect(() => {
-    if (error) {
+    onTranscription: (result) => {
+      if (result.isFinal) {
+        onTranscriptionComplete?.(result)
+      }
+    },
+    onError: (error) => {
+      logger.error('Backend transcription error:', error)
       onError?.(error)
     }
-  }, [error, onError])
+  })
 
-  const handleStart = async () => {
-    try {
-      await startListening()
-    } catch (err) {
-      console.error('Failed to start listening:', err)
-    }
-  }
-
-  const handleStop = async () => {
-    try {
-      await stopListening()
-      if (processedTranscription) {
-        onTranscriptionComplete?.(processedTranscription)
-      }
-    } catch (err) {
-      console.error('Failed to stop listening:', err)
-    }
-  }
-
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) {
+  // Initialize supported languages and formats
+  useEffect(() => {
+    const initialize = async () => {
       try {
-        await uploadAudioFile(file)
-        if (processedTranscription) {
-          onTranscriptionComplete?.(processedTranscription)
-        }
+        const [languages, formats] = await Promise.all([
+          getSupportedLanguages(),
+          getSupportedFormats()
+        ])
+        setSupportedLanguages(languages)
+        setSupportedFormats(formats)
+        setIsInitialized(true)
       } catch (err) {
-        console.error('Failed to upload file:', err)
+        logger.error('Failed to initialize backend transcriber:', err)
+        setIsInitialized(true) // Continue with defaults
       }
     }
+
+    initialize()
+  }, [getSupportedLanguages, getSupportedFormats])
+
+  // Auto-start if enabled
+  useEffect(() => {
+    if (autoStart && isInitialized && !isListening && !isConnecting) {
+      startListening()
+    }
+  }, [autoStart, isInitialized, isListening, isConnecting, startListening])
+
+  // Handle file upload
+  const handleFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    try {
+      await uploadAudioFile(file)
+    } catch (err) {
+      logger.error('File upload failed:', err)
+    }
+  }, [uploadAudioFile])
+
+  // Handle start/stop
+  const handleToggleListening = useCallback(async () => {
+    try {
+      if (isListening) {
+        await stopListening()
+      } else {
+        await startListening()
+      }
+    } catch (err) {
+      logger.error('Failed to toggle listening:', err)
+    }
+  }, [isListening, startListening, stopListening])
+
+  // Handle pause/resume
+  const handleTogglePause = useCallback(() => {
+    if (isPaused) {
+      resumeListening()
+    } else {
+      pauseListening()
+    }
+  }, [isPaused, pauseListening, resumeListening])
+
+  // Get connection status color
+  const getConnectionStatusColor = () => {
+    if (isConnecting) return 'bg-yellow-500'
+    if (isConnected) return 'bg-green-500'
+    if (error) return 'bg-red-500'
+    return 'bg-gray-500'
   }
 
-  const getStatusColor = () => {
-    if (error) return 'text-red-600'
-    if (isListening) return 'text-green-600'
-    if (isConnecting) return 'text-blue-600'
-    if (isConnected) return 'text-green-500'
-    return 'text-gray-600'
-  }
-
-  const getStatusText = () => {
-    if (error) return 'Error'
-    if (isListening && isPaused) return 'Paused'
-    if (isListening) return 'Listening...'
+  // Get connection status text
+  const getConnectionStatusText = () => {
     if (isConnecting) return 'Connecting...'
-    if (isConnected) return 'Ready'
+    if (isConnected) return 'Connected'
+    if (error) return 'Error'
     return 'Disconnected'
   }
 
-  const getQualityColor = () => {
-    if (!audioQuality) return 'text-gray-500'
-    if (isGoodQuality) return 'text-green-600'
-    if (audioQuality.clarity > 0.5) return 'text-yellow-600'
+  // Get confidence color
+  const getConfidenceColor = (conf: number) => {
+    if (conf >= 0.8) return 'text-green-600'
+    if (conf >= 0.6) return 'text-yellow-600'
     return 'text-red-600'
   }
 
-  const getQualityText = () => {
-    if (!audioQuality) return 'Unknown'
-    if (isGoodQuality) return 'Good'
-    if (audioQuality.clarity > 0.5) return 'Fair'
-    return 'Poor'
+  // Get quality indicator
+  const getQualityIndicator = () => {
+    if (!audioQuality) return null
+
+    const { volume, noiseLevel, clarity, isGoodQuality } = audioQuality
+    const qualityColor = isGoodQuality ? 'text-green-600' : 'text-yellow-600'
+    const qualityText = isGoodQuality ? 'Good' : 'Fair'
+
+    return (
+      <div className="flex items-center space-x-2">
+        <span className="text-sm text-gray-600">Quality:</span>
+        <span className={`text-sm font-medium ${qualityColor}`}>{qualityText}</span>
+        <div className="flex space-x-1">
+          <div className="w-2 h-2 bg-blue-500 rounded-full" title={`Volume: ${Math.round(volume * 100)}%`} />
+          <div className="w-2 h-2 bg-orange-500 rounded-full" title={`Noise: ${Math.round(noiseLevel * 100)}%`} />
+          <div className="w-2 h-2 bg-purple-500 rounded-full" title={`Clarity: ${Math.round(clarity * 100)}%`} />
+        </div>
+      </div>
+    )
+  }
+
+  if (!isInitialized) {
+    return (
+      <Card className={className}>
+        <CardContent className="p-6">
+          <div className="flex items-center justify-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            <span className="ml-2 text-gray-600">Initializing...</span>
+          </div>
+        </CardContent>
+      </Card>
+    )
   }
 
   return (
-    <Card className={`p-6 ${className}`}>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-gray-900">Backend Transcription</h3>
-        <div className="flex items-center space-x-2">
-          <div className={`text-sm font-medium ${getStatusColor()}`}>
-            {getStatusText()}
-          </div>
-          {isConnecting && <LoadingSpinner />}
-        </div>
-      </div>
-
-      {/* Connection Status */}
-      <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+    <Card className={className}>
+      <CardHeader>
         <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold">Backend Speech Recognition</h3>
           <div className="flex items-center space-x-2">
-            <div className={`w-2 h-2 rounded-full ${
-              isConnected ? 'bg-green-500' : 
-              isConnecting ? 'bg-blue-500' : 
-              'bg-gray-400'
-            }`} />
-            <span className="text-sm text-gray-600">
-              {isConnected ? 'Connected' : isConnecting ? 'Connecting...' : 'Disconnected'}
-            </span>
-          </div>
-          <div className="flex space-x-2">
-            <Button
-              onClick={connect}
-              disabled={isConnected || isConnecting}
-              variant="outline"
-              size="sm"
-            >
-              Connect
-            </Button>
-            <Button
-              onClick={disconnect}
-              disabled={!isConnected}
-              variant="outline"
-              size="sm"
-            >
-              Disconnect
-            </Button>
+            <div className={`w-3 h-3 rounded-full ${getConnectionStatusColor()}`} />
+            <span className="text-sm text-gray-600">{getConnectionStatusText()}</span>
           </div>
         </div>
-      </div>
+      </CardHeader>
 
-      {/* Audio Quality */}
-      {audioQuality && (
-        <div className="mb-4 p-3 bg-blue-50 rounded-lg">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <div className={`w-2 h-2 rounded-full ${getQualityColor()}`} />
-              <span className="text-sm font-medium text-gray-700">
-                Audio Quality: <span className={getQualityColor()}>{getQualityText()}</span>
-              </span>
-            </div>
-            <button
-              onClick={() => setShowQuality(!showQuality)}
-              className="text-xs text-blue-600 hover:text-blue-800"
-            >
-              {showQuality ? 'Hide' : 'Show'} Details
-            </button>
+      <CardContent className="space-y-4">
+        {/* Error Display */}
+        {error && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+            <p className="text-sm text-red-600">{error}</p>
           </div>
-          {showQuality && (
-            <div className="mt-2 text-xs text-gray-600 space-y-1">
-              <div>Volume: {Math.round(audioQuality.volume * 100)}%</div>
-              <div>Clarity: {Math.round(audioQuality.clarity * 100)}%</div>
-              <div>Noise Level: {Math.round(audioQuality.noiseLevel * 100)}%</div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Error Display */}
-      {error && (
-        <div className="mb-4">
-          <ErrorMessage 
-            error={error}
-            onDismiss={() => {}}
-            showNetworkStatus={false}
-          />
-        </div>
-      )}
-
-      {/* Controls */}
-      <div className="flex flex-wrap gap-2 mb-4">
-        <Button
-          onClick={handleStart}
-          disabled={isListening || isConnecting}
-          className="flex-1 min-w-0"
-        >
-          {isListening ? 'Recording...' : 'Start Recording'}
-        </Button>
-        
-        {isListening && (
-          <>
-            <Button
-              onClick={isPaused ? resumeListening : pauseListening}
-              variant="outline"
-              className="flex-1 min-w-0"
-            >
-              {isPaused ? 'Resume' : 'Pause'}
-            </Button>
-            <Button
-              onClick={handleStop}
-              variant="outline"
-              className="flex-1 min-w-0"
-            >
-              Stop
-            </Button>
-          </>
         )}
-        
-        <Button
-          onClick={reset}
-          variant="outline"
-          disabled={isListening}
-        >
-          Reset
-        </Button>
-      </div>
 
-      {/* File Upload */}
-      <div className="mb-4">
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Or upload audio file
-        </label>
-        <input
-          type="file"
-          accept="audio/*"
-          onChange={handleFileUpload}
-          disabled={isListening || isConnecting}
-          className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-        />
-      </div>
-
-      {/* Transcription Display */}
-      <div className="mb-4">
-        <div className="flex items-center justify-between mb-2">
-          <label className="block text-sm font-medium text-gray-700">
-            Transcription
-          </label>
+        {/* Controls */}
+        {showControls && (
           <div className="flex items-center space-x-2">
-            <span className="text-xs text-gray-500">
-              {confidence > 0 && `${Math.round(confidence * 100)}% confidence`}
-            </span>
-            <button
-              onClick={() => setShowSegments(!showSegments)}
-              className="text-xs text-blue-600 hover:text-blue-800"
+            <Button
+              onClick={handleToggleListening}
+              disabled={isConnecting}
+              variant={isListening ? 'destructive' : 'primary'}
+              className="flex items-center space-x-2"
             >
-              {showSegments ? 'Hide' : 'Show'} Segments
-            </button>
+              {isConnecting ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  <span>Connecting...</span>
+                </>
+              ) : isListening ? (
+                <>
+                  <div className="w-2 h-2 bg-white rounded-full"></div>
+                  <span>Stop</span>
+                </>
+              ) : (
+                <>
+                  <div className="w-2 h-2 bg-white rounded-full"></div>
+                  <span>Start</span>
+                </>
+              )}
+            </Button>
+
+            {isListening && (
+              <Button
+                onClick={handleTogglePause}
+                variant="outline"
+                size="sm"
+              >
+                {isPaused ? 'Resume' : 'Pause'}
+              </Button>
+            )}
+
+            <Button
+              onClick={clearTranscript}
+              variant="outline"
+              size="sm"
+              disabled={!transcript && !interimTranscript}
+            >
+              Clear
+            </Button>
+
+            <div className="flex-1" />
+
+            <input
+              type="file"
+              accept={supportedFormats.join(',')}
+              onChange={handleFileUpload}
+              className="hidden"
+              id="audio-upload"
+            />
+            <label
+              htmlFor="audio-upload"
+              className="px-3 py-2 text-sm border border-gray-300 rounded-md cursor-pointer hover:bg-gray-50"
+            >
+              Upload Audio
+            </label>
+          </div>
+        )}
+
+        {/* Audio Quality Indicator */}
+        {showQuality && audioQuality && (
+          <div className="p-3 bg-gray-50 rounded-md">
+            {getQualityIndicator()}
+          </div>
+        )}
+
+        {/* Transcript Display */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <h4 className="text-sm font-medium text-gray-700">Transcript</h4>
+            {confidence > 0 && (
+              <span className={`text-sm font-medium ${getConfidenceColor(confidence)}`}>
+                {Math.round(confidence * 100)}% confidence
+              </span>
+            )}
+          </div>
+          
+          <div className="p-3 bg-gray-50 rounded-md min-h-[100px] max-h-[200px] overflow-y-auto">
+            {transcript && (
+              <p className="text-gray-800 mb-2">{transcript}</p>
+            )}
+            {interimTranscript && (
+              <p className="text-gray-500 italic">{interimTranscript}</p>
+            )}
+            {!transcript && !interimTranscript && (
+              <p className="text-gray-400 italic">No transcript yet...</p>
+            )}
           </div>
         </div>
-        
-        <div className="p-3 bg-gray-50 rounded-lg min-h-[100px]">
-          {transcript ? (
-            <div className="space-y-2">
-              <div className="text-gray-900">
-                {transcript}
-                {interimTranscript && (
-                  <span className="text-gray-500 italic">
-                    {interimTranscript}
-                  </span>
-                )}
+
+        {/* Statistics */}
+        {showStats && (stats.totalDuration > 0 || stats.wordCount > 0) && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-3 bg-gray-50 rounded-md">
+            <div className="text-center">
+              <div className="text-lg font-semibold text-gray-800">
+                {Math.round(stats.totalDuration / 1000)}s
               </div>
-              
-              {showSegments && segments.length > 0 && (
-                <div className="mt-3 pt-3 border-t border-gray-200">
-                  <div className="text-xs text-gray-600 mb-2">Segments:</div>
-                  <div className="space-y-1">
-                    {segments.map((segment, index) => (
-                      <div key={index} className="text-xs text-gray-700">
-                        <span className="font-medium">[{formatDuration(segment.startTime)}]</span>
-                        <span className="ml-2">{segment.text}</span>
-                        <span className="ml-2 text-gray-500">
-                          ({Math.round(segment.confidence * 100)}%)
-                        </span>
-                      </div>
-                    ))}
+              <div className="text-xs text-gray-600">Duration</div>
+            </div>
+            <div className="text-center">
+              <div className="text-lg font-semibold text-gray-800">
+                {stats.wordCount}
+              </div>
+              <div className="text-xs text-gray-600">Words</div>
+            </div>
+            <div className="text-center">
+              <div className="text-lg font-semibold text-gray-800">
+                {stats.segmentCount}
+              </div>
+              <div className="text-xs text-gray-600">Segments</div>
+            </div>
+            <div className="text-center">
+              <div className="text-lg font-semibold text-gray-800">
+                {Math.round(stats.averageConfidence * 100)}%
+              </div>
+              <div className="text-xs text-gray-600">Confidence</div>
+            </div>
+          </div>
+        )}
+
+        {/* Processed Transcription */}
+        {processedTranscription && (
+          <div className="space-y-2">
+            <h4 className="text-sm font-medium text-gray-700">Processed Results</h4>
+            <div className="p-3 bg-blue-50 rounded-md">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="text-gray-600">Full Text:</span>
+                  <p className="font-medium text-gray-800 mt-1">
+                    {processedTranscription.fullText}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <div>
+                    <span className="text-gray-600">Word Count:</span>
+                    <span className="ml-2 font-medium">{processedTranscription.wordCount}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Duration:</span>
+                    <span className="ml-2 font-medium">
+                      {Math.round(processedTranscription.duration / 1000)}s
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Confidence:</span>
+                    <span className={`ml-2 font-medium ${getConfidenceColor(processedTranscription.confidence)}`}>
+                      {Math.round(processedTranscription.confidence * 100)}%
+                    </span>
                   </div>
                 </div>
-              )}
+              </div>
             </div>
-          ) : (
-            <div className="text-gray-500 text-center py-4">
-              {isListening ? 'Listening...' : 'Start recording to see transcription'}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Statistics */}
-      {stats.totalDuration > 0 && (
-        <div className="p-3 bg-gray-50 rounded-lg">
-          <div className="text-sm font-medium text-gray-700 mb-2">Statistics</div>
-          <div className="grid grid-cols-2 gap-4 text-xs text-gray-600">
-            <div>Duration: {formatDuration(stats.totalDuration)}</div>
-            <div>Words: {stats.wordCount}</div>
-            <div>Segments: {stats.segmentCount}</div>
-            <div>Avg Confidence: {Math.round(stats.averageConfidence * 100)}%</div>
           </div>
+        )}
+
+        {/* Segments */}
+        {segments.length > 0 && (
+          <div className="space-y-2">
+            <h4 className="text-sm font-medium text-gray-700">Segments</h4>
+            <div className="space-y-1 max-h-[150px] overflow-y-auto">
+              {segments.map((segment, index) => (
+                <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                  <span className="text-sm text-gray-800">{segment.text}</span>
+                  <div className="flex items-center space-x-2">
+                    <Badge variant="outline" className="text-xs">
+                      {Math.round(segment.confidence * 100)}%
+                    </Badge>
+                    <span className="text-xs text-gray-500">
+                      {Math.round(segment.startTime / 1000)}s
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Supported Formats */}
+        <div className="text-xs text-gray-500">
+          <div>Supported languages: {supportedLanguages.join(', ')}</div>
+          <div>Supported formats: {supportedFormats.join(', ')}</div>
         </div>
-      )}
+      </CardContent>
     </Card>
   )
 }
